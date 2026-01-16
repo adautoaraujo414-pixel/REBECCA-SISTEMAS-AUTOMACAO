@@ -385,22 +385,22 @@
         <div class="stats-grid">
           <div class="stat-card">
             <div class="stat-icon blue">📍</div>
-            <div class="stat-value">24</div>
+            <div class="stat-value" id="stat-corridas-hoje">0</div>
             <div class="stat-label">Corridas Hoje</div>
           </div>
           <div class="stat-card">
             <div class="stat-icon green">✅</div>
-            <div class="stat-value">21</div>
+            <div class="stat-value" id="stat-finalizadas">0</div>
             <div class="stat-label">Finalizadas</div>
           </div>
           <div class="stat-card">
             <div class="stat-icon yellow">🚘</div>
-            <div class="stat-value">5/8</div>
+            <div class="stat-value" id="stat-motoristas">0/0</div>
             <div class="stat-label">Motoristas Online</div>
           </div>
           <div class="stat-card">
             <div class="stat-icon purple">💰</div>
-            <div class="stat-value">R$ 487,50</div>
+            <div class="stat-value" id="stat-faturamento">R$ 0,00</div>
             <div class="stat-label">Faturamento Hoje</div>
           </div>
         </div>
@@ -408,7 +408,7 @@
         <div class="card">
           <div class="card-header">
             <h2>🚗 Corridas em Andamento</h2>
-            <span style="background: var(--info); color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px;">3 ativas</span>
+            <span id="badge-corridas-ativas" style="background: var(--info); color: white; padding: 4px 12px; border-radius: 20px; font-size: 12px;">0 ativas</span>
           </div>
           <div class="card-body" style="padding: 0;">
             <table class="table">
@@ -422,30 +422,12 @@
                   <th>Valor</th>
                 </tr>
               </thead>
-              <tbody>
+              <tbody id="tabela-corridas-andamento">
+                <!-- Dados carregados da API -->
                 <tr>
-                  <td>#127</td>
-                  <td>Maria Silva</td>
-                  <td>João Santos</td>
-                  <td>Rua das Flores → Shopping</td>
-                  <td><span class="status status-em-corrida">Em Andamento</span></td>
-                  <td>R$ 24,50</td>
-                </tr>
-                <tr>
-                  <td>#126</td>
-                  <td>Carlos Lima</td>
-                  <td>Pedro Oliveira</td>
-                  <td>Av. Brasil → Terminal</td>
-                  <td><span class="status status-em-corrida">A Caminho</span></td>
-                  <td>R$ 18,00</td>
-                </tr>
-                <tr>
-                  <td>#125</td>
-                  <td>Ana Costa</td>
-                  <td>Lucas Souza</td>
-                  <td>Shopping → Centro</td>
-                  <td><span class="status status-em-corrida">Em Andamento</span></td>
-                  <td>R$ 32,00</td>
+                  <td colspan="6" style="text-align: center; padding: 30px; color: #888;">
+                    <div>🔄 Carregando corridas...</div>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -465,39 +447,14 @@
             
             <!-- Lista de Motoristas no Mapa -->
             <div class="mapa-sidebar">
-              <div class="mapa-sidebar-header">👥 Motoristas (5 online)</div>
-              <div class="mapa-sidebar-body">
-                <div class="motorista-item" onclick="focalizarMotorista(0)">
-                  <div class="motorista-avatar" style="background: var(--success);">JS</div>
-                  <div class="motorista-info">
-                    <div class="motorista-nome">João Santos</div>
-                    <div class="motorista-local">📍 Centro - Em corrida #127</div>
-                  </div>
-                  <div class="motorista-status em-corrida"></div>
+              <div class="mapa-sidebar-header">👥 Motoristas (<span id="qtd-motoristas-online">0</span> online)</div>
+              <div class="mapa-sidebar-body" id="lista-motoristas-mapa">
+                <!-- Carregado da API -->
+                <div style="padding: 20px; text-align: center; color: #888;">
+                  🔄 Carregando motoristas...
                 </div>
-                <div class="motorista-item" onclick="focalizarMotorista(1)">
-                  <div class="motorista-avatar" style="background: var(--info);">PO</div>
-                  <div class="motorista-info">
-                    <div class="motorista-nome">Pedro Oliveira</div>
-                    <div class="motorista-local">📍 Av. Brasil - A caminho</div>
-                  </div>
-                  <div class="motorista-status em-corrida"></div>
-                </div>
-                <div class="motorista-item" onclick="focalizarMotorista(2)">
-                  <div class="motorista-avatar" style="background: var(--info);">LS</div>
-                  <div class="motorista-info">
-                    <div class="motorista-nome">Lucas Souza</div>
-                    <div class="motorista-local">📍 Shopping - Em corrida</div>
-                  </div>
-                  <div class="motorista-status em-corrida"></div>
-                </div>
-                <div class="motorista-item" onclick="focalizarMotorista(3)">
-                  <div class="motorista-avatar" style="background: var(--success);">ML</div>
-                  <div class="motorista-info">
-                    <div class="motorista-nome">Marcos Lima</div>
-                    <div class="motorista-local">📍 Terminal - Disponível</div>
-                  </div>
-                  <div class="motorista-status online"></div>
+              </div>
+            </div>
                 </div>
                 <div class="motorista-item" onclick="focalizarMotorista(4)">
                   <div class="motorista-avatar" style="background: var(--success);">RC</div>
@@ -541,56 +498,12 @@
                 </tr>
               </thead>
               <tbody id="tabela-motoristas">
-                <tr>
-                  <td><strong>João Santos</strong><br><small style="color: var(--text-muted);">CNH: 12345678900</small></td>
-                  <td>(14) 99999-1111</td>
-                  <td>Fiat Uno Branco - ABC-1234</td>
-                  <td><span class="status status-em-corrida">Em Corrida</span></td>
-                  <td>156</td>
-                  <td>
-                    <button class="btn btn-sm btn-outline" onclick="editarMotorista(1)" title="Editar">✏️</button>
-                    <button class="btn btn-sm btn-outline" onclick="localizarMotorista(1)" title="Localizar">📍</button>
-                    <button class="btn btn-sm btn-outline" onclick="reenviarAcesso(1)" title="Reenviar Link">🔗</button>
-                    <button class="btn btn-sm" style="background: #ef4444; color: white;" onclick="excluirMotorista(1, 'João Santos')" title="Excluir">🗑️</button>
-                  </td>
-                </tr>
-                <tr>
-                  <td><strong>Pedro Oliveira</strong><br><small style="color: var(--text-muted);">CNH: 98765432100</small></td>
-                  <td>(14) 99999-2222</td>
-                  <td>VW Gol Prata - DEF-5678</td>
-                  <td><span class="status" style="background: #fef3c7; color: #92400e;">🔧 Manutenção</span></td>
-                  <td>98</td>
-                  <td>
-                    <button class="btn btn-sm btn-outline" onclick="editarMotorista(2)" title="Editar">✏️</button>
-                    <button class="btn btn-sm btn-outline" disabled title="Em manutenção">📍</button>
-                    <button class="btn btn-sm btn-outline" onclick="reenviarAcesso(2)" title="Reenviar Link">🔗</button>
-                    <button class="btn btn-sm" style="background: #ef4444; color: white;" onclick="excluirMotorista(2, 'Pedro Oliveira')" title="Excluir">🗑️</button>
-                  </td>
-                </tr>
-                <tr>
-                  <td><strong>Marcos Lima</strong><br><small style="color: var(--text-muted);">CNH: 45678912300</small></td>
-                  <td>(14) 99999-4444</td>
-                  <td>Hyundai HB20 Azul - JKL-3456</td>
-                  <td><span class="status status-online">Online</span></td>
-                  <td>87</td>
-                  <td>
-                    <button class="btn btn-sm btn-outline" onclick="editarMotorista(3)" title="Editar">✏️</button>
-                    <button class="btn btn-sm btn-outline" onclick="localizarMotorista(3)" title="Localizar">📍</button>
-                    <button class="btn btn-sm btn-outline" onclick="reenviarAcesso(3)" title="Reenviar Link">🔗</button>
-                    <button class="btn btn-sm" style="background: #ef4444; color: white;" onclick="excluirMotorista(3, 'Marcos Lima')" title="Excluir">🗑️</button>
-                  </td>
-                </tr>
-                <tr>
-                  <td><strong>Carlos Silva</strong><br><small style="color: var(--text-muted);">CNH: 78912345600</small></td>
-                  <td>(14) 99999-6666</td>
-                  <td>Renault Sandero Vermelho - PQR-1234</td>
-                  <td><span class="status status-offline">Offline</span></td>
-                  <td>67</td>
-                  <td>
-                    <button class="btn btn-sm btn-outline" onclick="editarMotorista(4)" title="Editar">✏️</button>
-                    <button class="btn btn-sm btn-outline" disabled title="Offline">📍</button>
-                    <button class="btn btn-sm btn-outline" onclick="reenviarAcesso(4)" title="Reenviar Link">🔗</button>
-                    <button class="btn btn-sm" style="background: #ef4444; color: white;" onclick="excluirMotorista(4, 'Carlos Silva')" title="Excluir">🗑️</button>
+                <!-- Dados carregados da API -->
+                <tr id="motoristas-loading">
+                  <td colspan="6" style="text-align: center; padding: 40px; color: #888;">
+                    <div style="font-size: 24px; margin-bottom: 10px;">🔄</div>
+                    <div>Carregando motoristas...</div>
+                    <small>Nenhum motorista cadastrado? Clique em "+ Novo Motorista"</small>
                   </td>
                 </tr>
               </tbody>
@@ -610,7 +523,7 @@
             <div style="flex: 1;">
               <h3 style="margin: 0 0 4px; color: #92400e;">Vencimentos Hoje!</h3>
               <p style="margin: 0; color: #a16207;" id="texto-vencimentos-hoje">
-                João Santos e Maria Silva têm pagamento vencendo hoje.
+                Carregando vencimentos...
               </p>
             </div>
             <button class="btn btn-sm" style="background: #f59e0b; color: white;" onclick="enviarLembretesHoje()">
@@ -2105,17 +2018,11 @@
     
     // Inicializar banco com motoristas padrão
     function inicializarBanco() {
+      // Inicializar banco vazio - dados vêm da API
       var dados = localStorage.getItem(DB_KEY);
       if (!dados) {
-        var motoristasIniciais = [
-          { id: 1, nome: 'João Santos', iniciais: 'JS', telefone: '14999991111', veiculo: 'Fiat Uno Branco - ABC-1234', lat: -21.6785, lng: -49.7498, status: 'em-corrida', local: 'Centro', corrida: '#127', ultimaAtualizacao: Date.now() },
-          { id: 2, nome: 'Pedro Oliveira', iniciais: 'PO', telefone: '14999992222', veiculo: 'VW Gol Prata - DEF-5678', lat: -21.6810, lng: -49.7520, status: 'em-corrida', local: 'Av. Brasil', corrida: '#126', ultimaAtualizacao: Date.now() },
-          { id: 3, nome: 'Lucas Souza', iniciais: 'LS', telefone: '14999993333', veiculo: 'Chevrolet Onix Preto - GHI-9012', lat: -21.6750, lng: -49.7450, status: 'em-corrida', local: 'Shopping', corrida: '#125', ultimaAtualizacao: Date.now() },
-          { id: 4, nome: 'Marcos Lima', iniciais: 'ML', telefone: '14999994444', veiculo: 'Hyundai HB20 Azul - JKL-3456', lat: -21.6830, lng: -49.7480, status: 'online', local: 'Terminal', corrida: null, ultimaAtualizacao: Date.now() },
-          { id: 5, nome: 'Rafael Costa', iniciais: 'RC', telefone: '14999995555', veiculo: 'Toyota Etios Branco - MNO-7890', lat: -21.6770, lng: -49.7510, status: 'online', local: 'Praça Central', corrida: null, ultimaAtualizacao: Date.now() },
-          { id: 6, nome: 'Carlos Silva', iniciais: 'CS', telefone: '14999996666', veiculo: 'Renault Sandero Vermelho - PQR-1234', lat: -21.6800, lng: -49.7490, status: 'offline', local: 'Última: 2h atrás', corrida: null, ultimaAtualizacao: Date.now() - 7200000 }
-        ];
-        localStorage.setItem(DB_KEY, JSON.stringify(motoristasIniciais));
+        // Banco vazio - motoristas vêm da API do servidor
+        localStorage.setItem(DB_KEY, JSON.stringify([]));
       }
     }
     
