@@ -31,6 +31,7 @@ const menuItems = [
   { path: '/assistencia', icon: Wrench, label: 'Assistência' },
   { path: '/avarias', icon: AlertTriangle, label: 'Avarias' },
   { path: '/relatorios', icon: BarChart3, label: 'Relatórios' },
+  { path: '/whatsapp', icon: Smartphone, label: 'WhatsApp' },
   { path: '/configuracoes', icon: Settings, label: 'Configurações' },
 ]
 
