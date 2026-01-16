@@ -1,128 +1,110 @@
-// ==============================================
-// REBECA - CONFIGURAÇÃO DO BANCO DE DADOS
-// PostgreSQL Connection Pool
-// ==============================================
+/**
+ * Configuração do Banco de Dados PostgreSQL
+ * Sistema REBECA - Central de Corridas via WhatsApp
+ */
 
 const { Pool } = require('pg');
 
-// Configuração do pool de conexões PostgreSQL
-const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: parseInt(process.env.DB_PORT) || 5432,
-  database: process.env.DB_NAME || 'rebeca',
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD,
+// Configuração do Pool de conexões
+const poolConfig = {
+  // String de conexão do banco de dados
+  connectionString: process.env.DATABASE_URL,
   
-  // SSL Configuration
-  ssl: {
-    rejectUnauthorized: false
-  },
+  // SSL para produção (Render, Railway, etc)
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
   
-  // FORÇA IPv4 (resolve problema de IPv6 no Railway)
+  // IMPORTANTE: Força uso de IPv4 para evitar erro ENETUNREACH
   family: 4,
   
-  // Pool Configuration
-  max: 20, // Máximo de conexões no pool
-  idleTimeoutMillis: 30000, // Tempo para fechar conexão ociosa
-  connectionTimeoutMillis: 10000, // Timeout para nova conexão
-  
-  // Retry Configuration
-  allowExitOnIdle: false
-});
+  // Configurações do pool de conexões
+  max: 20,                        // Máximo de conexões simultâneas
+  min: 2,                         // Mínimo de conexões mantidas
+  idleTimeoutMillis: 30000,       // Tempo máximo de inatividade (30 segundos)
+  connectionTimeoutMillis: 10000, // Timeout para conectar (10 segundos)
+  acquireTimeoutMillis: 30000,    // Timeout para adquirir conexão do pool
+};
 
-// Event Handlers
-pool.on('connect', (client) => {
-  console.log('✅ Nova conexão estabelecida com PostgreSQL');
-});
+// Criar o pool de conexões
+const pool = new Pool(poolConfig);
 
-pool.on('acquire', (client) => {
-  console.log('🔄 Cliente adquirido do pool');
-});
-
-pool.on('remove', (client) => {
-  console.log('🗑️ Cliente removido do pool');
-});
-
+// Evento de erro no pool
 pool.on('error', (err, client) => {
-  console.error('❌ Erro inesperado no cliente PostgreSQL:', err);
-  process.exit(-1);
+  console.error('❌ Erro inesperado no cliente do pool:', err);
 });
 
-// Função de teste de conexão
-async function testConnection() {
+// Evento de conexão bem-sucedida
+pool.on('connect', (client) => {
+  console.log('✅ Nova conexão estabelecida com o banco de dados');
+});
+
+// Função para testar a conexão
+async function testarConexao() {
   try {
     const client = await pool.connect();
     const result = await client.query('SELECT NOW()');
     console.log('✅ Conexão com banco de dados OK:', result.rows[0].now);
     client.release();
     return true;
-  } catch (err) {
-    console.error('❌ Erro ao conectar ao banco de dados:', err.message);
+  } catch (error) {
+    console.error('❌ Erro ao conectar com banco de dados:', error.message);
     return false;
   }
 }
 
-// Função para executar queries
-async function query(text, params) {
-  const start = Date.now();
-  try {
-    const res = await pool.query(text, params);
-    const duration = Date.now() - start;
-    console.log('📊 Query executada:', { text, duration, rows: res.rowCount });
-    return res;
-  } catch (err) {
-    console.error('❌ Erro na query:', err.message);
-    throw err;
+// Função para executar queries com retry
+async function query(text, params, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    try {
+      const result = await pool.query(text, params);
+      return result;
+    } catch (error) {
+      console.error(`❌ Erro na query (tentativa ${i + 1}/${retries}):`, error.message);
+      if (i === retries - 1) throw error;
+      // Aguarda antes de tentar novamente
+      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
+    }
   }
 }
 
 // Função para obter um cliente do pool
 async function getClient() {
   const client = await pool.connect();
-  const originalQuery = client.query;
-  const originalRelease = client.release;
+  const originalQuery = client.query.bind(client);
+  const originalRelease = client.release.bind(client);
   
-  // Timeout para liberar cliente
+  // Timeout para liberar cliente automaticamente
   const timeout = setTimeout(() => {
-    console.error('⚠️ Cliente não foi liberado após 5 segundos!');
-    console.error(new Error().stack);
-  }, 5000);
+    console.error('⚠️ Cliente do banco não foi liberado em 30 segundos!');
+    client.release();
+  }, 30000);
   
-  // Sobrescrever query para logging
   client.query = (...args) => {
-    return originalQuery.apply(client, args);
+    return originalQuery(...args);
   };
   
-  // Sobrescrever release para limpar timeout
   client.release = () => {
     clearTimeout(timeout);
-    client.query = originalQuery;
-    client.release = originalRelease;
-    return originalRelease.apply(client);
+    return originalRelease();
   };
   
   return client;
 }
 
-// Graceful shutdown
-process.on('SIGTERM', async () => {
-  console.log('⚠️ SIGTERM recebido, fechando pool...');
-  await pool.end();
-  console.log('✅ Pool fechado');
-  process.exit(0);
-});
+// Função para fechar o pool (graceful shutdown)
+async function fecharPool() {
+  try {
+    await pool.end();
+    console.log('✅ Pool de conexões fechado com sucesso');
+  } catch (error) {
+    console.error('❌ Erro ao fechar pool:', error.message);
+  }
+}
 
-process.on('SIGINT', async () => {
-  console.log('⚠️ SIGINT recebido, fechando pool...');
-  await pool.end();
-  console.log('✅ Pool fechado');
-  process.exit(0);
-});
-
-// Exports
+// Exportar o pool e funções utilitárias
 module.exports = {
   pool,
   query,
   getClient,
-  testConnection
+  testarConexao,
+  fecharPool
 };
