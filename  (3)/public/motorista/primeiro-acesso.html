@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Primeiro Acesso - Motorista</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    
+    .container {
+      background: white;
+      border-radius: 24px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      width: 100%;
+      max-width: 440px;
+      overflow: hidden;
+    }
+    
+    .header {
+      background: linear-gradient(135deg, #10b981, #059669);
+      padding: 40px 30px;
+      text-align: center;
+      color: white;
+    }
+    
+    .header-icon {
+      width: 80px;
+      height: 80px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 40px;
+      margin: 0 auto 20px;
+    }
+    
+    .header h1 {
+      font-size: 24px;
+      margin-bottom: 8px;
+    }
+    
+    .header p {
+      opacity: 0.9;
+      font-size: 15px;
+    }
+    
+    .content {
+      padding: 30px;
+    }
+    
+    .welcome-card {
+      background: #f0fdf4;
+      border: 1px solid #86efac;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 24px;
+    }
+    
+    .welcome-card h3 {
+      color: #166534;
+      font-size: 16px;
+      margin-bottom: 8px;
+    }
+    
+    .welcome-card p {
+      color: #15803d;
+      font-size: 14px;
+      margin: 0;
+    }
+    
+    .info-row {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    
+    .info-item {
+      flex: 1;
+      background: #f8fafc;
+      border-radius: 10px;
+      padding: 12px;
+      text-align: center;
+    }
+    
+    .info-item .label {
+      font-size: 11px;
+      color: #64748b;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    
+    .info-item .value {
+      font-size: 14px;
+      font-weight: 600;
+      color: #1e293b;
+    }
+    
+    .form-group {
+      margin-bottom: 20px;
+    }
+    
+    .form-label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      color: #374151;
+      margin-bottom: 8px;
+    }
+    
+    .form-input {
+      width: 100%;
+      padding: 14px 16px;
+      border: 2px solid #e2e8f0;
+      border-radius: 10px;
+      font-size: 16px;
+      transition: border-color 0.2s;
+    }
+    
+    .form-input:focus {
+      outline: none;
+      border-color: #10b981;
+    }
+    
+    .password-strength {
+      height: 4px;
+      background: #e2e8f0;
+      border-radius: 2px;
+      margin-top: 8px;
+      overflow: hidden;
+    }
+    
+    .password-strength-bar {
+      height: 100%;
+      width: 0%;
+      transition: all 0.3s;
+    }
+    
+    .btn {
+      width: 100%;
+      padding: 16px;
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 20px rgba(16, 185, 129, 0.3);
+    }
+    
+    .btn:disabled {
+      background: #94a3b8;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+    }
+    
+    .footer-text {
+      text-align: center;
+      margin-top: 20px;
+      font-size: 13px;
+      color: #64748b;
+    }
+    
+    /* Loading */
+    .loading {
+      display: none;
+      text-align: center;
+      padding: 40px;
+    }
+    
+    .spinner {
+      width: 50px;
+      height: 50px;
+      border: 4px solid #e2e8f0;
+      border-top-color: #10b981;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    /* Erro */
+    .error-container {
+      display: none;
+      text-align: center;
+      padding: 40px;
+    }
+    
+    .error-icon {
+      width: 80px;
+      height: 80px;
+      background: #fef2f2;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 40px;
+      margin: 0 auto 20px;
+    }
+    
+    /* Sucesso */
+    .success-container {
+      display: none;
+      text-align: center;
+      padding: 40px;
+    }
+    
+    .success-icon {
+      width: 80px;
+      height: 80px;
+      background: #f0fdf4;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 40px;
+      margin: 0 auto 20px;
+      animation: pop 0.5s ease;
+    }
+    
+    @keyframes pop {
+      0% { transform: scale(0); }
+      50% { transform: scale(1.2); }
+      100% { transform: scale(1); }
+    }
+    
+    /* Já configurado */
+    .already-configured {
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="header-icon">🚗</div>
+      <h1>Bem-vindo à equipe!</h1>
+      <p>Configure seu acesso para começar a trabalhar</p>
+    </div>
+    
+    <!-- Loading -->
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <p>Verificando seu cadastro...</p>
+    </div>
+    
+    <!-- Erro -->
+    <div class="error-container" id="error-container">
+      <div class="error-icon">❌</div>
+      <h2 style="color: #dc2626; margin-bottom: 12px;">Link Inválido</h2>
+      <p style="color: #64748b; margin-bottom: 20px;" id="error-message">
+        Este link é inválido ou já expirou. Entre em contato com o administrador da frota para obter um novo link.
+      </p>
+      <a href="/" class="btn" style="display: inline-block; width: auto; padding: 12px 24px; text-decoration: none;">
+        Voltar ao início
+      </a>
+    </div>
+    
+    <!-- Já configurado -->
+    <div class="already-configured" id="already-configured">
+      <div class="content" style="text-align: center;">
+        <div style="width: 80px; height: 80px; background: #dbeafe; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 40px; margin: 0 auto 20px;">✅</div>
+        <h2 style="margin-bottom: 12px;">Acesso já configurado!</h2>
+        <p style="color: #64748b; margin-bottom: 20px;">
+          Você já configurou sua senha anteriormente. Use seu telefone e senha para acessar o painel.
+        </p>
+        <a href="/motorista" class="btn" style="display: inline-block; text-decoration: none;">
+          Ir para o Painel
+        </a>
+      </div>
+    </div>
+    
+    <!-- Formulário -->
+    <div class="content" id="form-container" style="display: none;">
+      <div class="welcome-card">
+        <h3>👋 Olá, <span id="motorista-nome">Motorista</span>!</h3>
+        <p>Configure sua senha para acessar o painel do motorista e começar a receber corridas.</p>
+      </div>
+      
+      <div class="info-row">
+        <div class="info-item">
+          <div class="label">Veículo</div>
+          <div class="value" id="motorista-veiculo">-</div>
+        </div>
+        <div class="info-item">
+          <div class="label">Placa</div>
+          <div class="value" id="motorista-placa">-</div>
+        </div>
+      </div>
+      
+      <form id="form-acesso" onsubmit="configurarAcesso(event)">
+        <div class="form-group">
+          <label class="form-label">📱 Telefone (confirmação)</label>
+          <input type="tel" class="form-input" id="telefone" disabled>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">🔒 Crie sua senha</label>
+          <input type="password" class="form-input" id="senha" placeholder="Mínimo 4 caracteres" required minlength="4" oninput="verificarSenha()">
+          <div class="password-strength">
+            <div class="password-strength-bar" id="strength-bar"></div>
+          </div>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">🔒 Confirme sua senha</label>
+          <input type="password" class="form-input" id="confirmar-senha" placeholder="Digite novamente" required oninput="verificarConfirmacao()">
+        </div>
+        
+        <button type="submit" class="btn" id="btn-submit">
+          ✓ Configurar Acesso
+        </button>
+      </form>
+      
+      <p class="footer-text">
+        Após configurar, você poderá acessar o painel do motorista e receber corridas.
+      </p>
+    </div>
+    
+    <!-- Sucesso -->
+    <div class="success-container" id="success-container">
+      <div class="success-icon">✅</div>
+      <h2 style="color: #166534; margin-bottom: 12px;">Tudo pronto!</h2>
+      <p style="color: #64748b; margin-bottom: 24px;">
+        Seu acesso foi configurado com sucesso. Agora você pode acessar o painel e começar a receber corridas!
+      </p>
+      <a href="/motorista" class="btn" id="btn-acessar" style="display: inline-block; text-decoration: none;">
+        🚀 Acessar Painel do Motorista
+      </a>
+    </div>
+  </div>
+
+  <script>
+    var tokenAcesso = null;
+    var motoristaData = null;
+    
+    // Obter token da URL
+    function getToken() {
+      var params = new URLSearchParams(window.location.search);
+      return params.get('token');
+    }
+    
+    // Verificar token ao carregar
+    async function verificarToken() {
+      tokenAcesso = getToken();
+      
+      if (!tokenAcesso) {
+        mostrarErro('Link inválido. Nenhum token fornecido.');
+        return;
+      }
+      
+      document.getElementById('loading').style.display = 'block';
+      
+      try {
+        var response = await fetch('/api/auth/motorista/validar-token?token=' + tokenAcesso);
+        var data = await response.json();
+        
+        document.getElementById('loading').style.display = 'none';
+        
+        if (!data.success) {
+          mostrarErro(data.error || 'Token inválido ou expirado.');
+          return;
+        }
+        
+        motoristaData = data.data;
+        
+        // Verificar se já configurou
+        if (motoristaData.jaConfigurado) {
+          document.getElementById('already-configured').style.display = 'block';
+          return;
+        }
+        
+        // Preencher dados
+        document.getElementById('motorista-nome').textContent = motoristaData.nome.split(' ')[0];
+        document.getElementById('motorista-veiculo').textContent = motoristaData.veiculo || '-';
+        document.getElementById('motorista-placa').textContent = motoristaData.placa || '-';
+        document.getElementById('telefone').value = formatarTelefone(motoristaData.telefone);
+        
+        // Mostrar formulário
+        document.getElementById('form-container').style.display = 'block';
+        
+      } catch (error) {
+        document.getElementById('loading').style.display = 'none';
+        mostrarErro('Erro ao verificar token. Tente novamente.');
+      }
+    }
+    
+    function mostrarErro(mensagem) {
+      document.getElementById('error-message').textContent = mensagem;
+      document.getElementById('error-container').style.display = 'block';
+    }
+    
+    function formatarTelefone(tel) {
+      if (!tel) return '';
+      tel = tel.replace(/\D/g, '');
+      if (tel.length === 11) {
+        return '(' + tel.substring(0, 2) + ') ' + tel.substring(2, 7) + '-' + tel.substring(7);
+      }
+      return tel;
+    }
+    
+    function verificarSenha() {
+      var senha = document.getElementById('senha').value;
+      var bar = document.getElementById('strength-bar');
+      
+      var strength = 0;
+      if (senha.length >= 4) strength += 25;
+      if (senha.length >= 6) strength += 25;
+      if (/[A-Z]/.test(senha)) strength += 25;
+      if (/[0-9]/.test(senha)) strength += 25;
+      
+      bar.style.width = strength + '%';
+      
+      if (strength < 50) {
+        bar.style.background = '#ef4444';
+      } else if (strength < 75) {
+        bar.style.background = '#f59e0b';
+      } else {
+        bar.style.background = '#10b981';
+      }
+    }
+    
+    function verificarConfirmacao() {
+      var senha = document.getElementById('senha').value;
+      var confirmar = document.getElementById('confirmar-senha').value;
+      var btn = document.getElementById('btn-submit');
+      
+      if (confirmar && senha !== confirmar) {
+        document.getElementById('confirmar-senha').style.borderColor = '#ef4444';
+        btn.disabled = true;
+      } else if (confirmar && senha === confirmar) {
+        document.getElementById('confirmar-senha').style.borderColor = '#10b981';
+        btn.disabled = false;
+      }
+    }
+    
+    async function configurarAcesso(event) {
+      event.preventDefault();
+      
+      var senha = document.getElementById('senha').value;
+      var confirmar = document.getElementById('confirmar-senha').value;
+      
+      if (senha !== confirmar) {
+        alert('As senhas não coincidem!');
+        return;
+      }
+      
+      if (senha.length < 4) {
+        alert('A senha deve ter pelo menos 4 caracteres.');
+        return;
+      }
+      
+      var btn = document.getElementById('btn-submit');
+      btn.disabled = true;
+      btn.textContent = '⏳ Configurando...';
+      
+      try {
+        var response = await fetch('/api/auth/motorista/configurar-acesso', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token: tokenAcesso,
+            senha: senha
+          })
+        });
+        
+        var data = await response.json();
+        
+        if (!data.success) {
+          alert(data.error || 'Erro ao configurar acesso.');
+          btn.disabled = false;
+          btn.textContent = '✓ Configurar Acesso';
+          return;
+        }
+        
+        // Salvar token de sessão
+        localStorage.setItem('motorista_token', data.data.token);
+        localStorage.setItem('motorista_id', data.data.id);
+        localStorage.setItem('motorista_nome', data.data.nome);
+        
+        // Mostrar sucesso
+        document.getElementById('form-container').style.display = 'none';
+        document.getElementById('success-container').style.display = 'block';
+        
+      } catch (error) {
+        alert('Erro de conexão. Tente novamente.');
+        btn.disabled = false;
+        btn.textContent = '✓ Configurar Acesso';
+      }
+    }
+    
+    // Inicializar
+    verificarToken();
+  </script>
+</body>
+</html>

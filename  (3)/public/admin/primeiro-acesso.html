@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Primeiro Acesso - UBMAX</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+      padding: 20px;
+    }
+    .container {
+      background: white;
+      border-radius: 24px;
+      padding: 40px;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+    .header {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+    .logo {
+      font-size: 56px;
+      margin-bottom: 16px;
+    }
+    .header h1 {
+      font-size: 24px;
+      color: #1e293b;
+      margin-bottom: 8px;
+    }
+    .header p {
+      color: #64748b;
+      font-size: 14px;
+    }
+    .empresa-nome {
+      background: linear-gradient(135deg, #6366f1, #a855f7);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      font-weight: 700;
+      font-size: 20px;
+      margin: 16px 0;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 14px;
+      font-weight: 500;
+      color: #475569;
+      margin-bottom: 8px;
+    }
+    .form-group input {
+      width: 100%;
+      padding: 14px 16px;
+      border: 2px solid #e2e8f0;
+      border-radius: 12px;
+      font-size: 16px;
+      transition: border-color 0.2s;
+    }
+    .form-group input:focus {
+      outline: none;
+      border-color: #6366f1;
+    }
+    .btn {
+      width: 100%;
+      padding: 16px;
+      background: linear-gradient(135deg, #6366f1, #a855f7);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px rgba(99, 102, 241, 0.4);
+    }
+    .btn:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .erro {
+      background: #fee2e2;
+      color: #991b1b;
+      padding: 12px 16px;
+      border-radius: 10px;
+      font-size: 14px;
+      margin-bottom: 20px;
+      display: none;
+    }
+    .sucesso {
+      background: #ecfdf5;
+      color: #065f46;
+      padding: 16px;
+      border-radius: 10px;
+      text-align: center;
+      display: none;
+    }
+    .sucesso h3 {
+      margin-bottom: 8px;
+    }
+    .sucesso a {
+      display: inline-block;
+      margin-top: 16px;
+      padding: 12px 24px;
+      background: #10b981;
+      color: white;
+      text-decoration: none;
+      border-radius: 10px;
+      font-weight: 500;
+    }
+    .loading {
+      text-align: center;
+      padding: 40px;
+    }
+    .loading .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid #e2e8f0;
+      border-top-color: #6366f1;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 16px;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .dicas {
+      margin-top: 24px;
+      padding: 16px;
+      background: #f8fafc;
+      border-radius: 12px;
+    }
+    .dicas h4 {
+      font-size: 13px;
+      color: #475569;
+      margin-bottom: 8px;
+    }
+    .dicas ul {
+      font-size: 12px;
+      color: #64748b;
+      padding-left: 16px;
+    }
+    .dicas li {
+      margin-bottom: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Loading inicial -->
+    <div id="loading" class="loading">
+      <div class="spinner"></div>
+      <p>Validando seu acesso...</p>
+    </div>
+
+    <!-- Erro -->
+    <div id="tela-erro" style="display: none; text-align: center;">
+      <div class="logo">❌</div>
+      <h2 style="color: #991b1b; margin-bottom: 8px;">Link Inválido</h2>
+      <p id="msg-erro" style="color: #64748b;">Este link não é válido ou já expirou.</p>
+      <a href="/admin" style="display: inline-block; margin-top: 24px; color: #6366f1; font-weight: 500;">Ir para Login</a>
+    </div>
+
+    <!-- Formulário de cadastro de senha -->
+    <div id="tela-cadastro" style="display: none;">
+      <div class="header">
+        <div class="logo">🔐</div>
+        <h1>Cadastre sua Senha</h1>
+        <p>Primeiro acesso ao painel</p>
+        <div class="empresa-nome" id="nome-empresa">UBMAX Transportes</div>
+      </div>
+
+      <div id="erro-cadastro" class="erro"></div>
+
+      <form id="form-senha" onsubmit="cadastrarSenha(event)">
+        <div class="form-group">
+          <label>Nova Senha</label>
+          <input type="password" id="senha" placeholder="Mínimo 6 caracteres" required minlength="6">
+        </div>
+        
+        <div class="form-group">
+          <label>Confirmar Senha</label>
+          <input type="password" id="confirmar-senha" placeholder="Digite novamente" required>
+        </div>
+
+        <button type="submit" class="btn" id="btn-cadastrar">
+          Cadastrar Senha
+        </button>
+      </form>
+
+      <div class="dicas">
+        <h4>💡 Dicas para uma senha segura:</h4>
+        <ul>
+          <li>Use pelo menos 6 caracteres</li>
+          <li>Misture letras e números</li>
+          <li>Evite senhas óbvias como "123456"</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Sucesso -->
+    <div id="tela-sucesso" class="sucesso">
+      <div style="font-size: 56px; margin-bottom: 16px;">🎉</div>
+      <h3>Senha Cadastrada!</h3>
+      <p>Agora você pode acessar o painel da sua frota.</p>
+      <a href="/admin">Fazer Login</a>
+    </div>
+  </div>
+
+  <script>
+    // Pegar token da URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+
+    // Validar token ao carregar
+    document.addEventListener('DOMContentLoaded', validarToken);
+
+    async function validarToken() {
+      if (!token) {
+        mostrarErro('Link inválido. Solicite um novo link de acesso.');
+        return;
+      }
+
+      try {
+        const res = await fetch('/api/auth/admin/validar-token?token=' + token);
+        const data = await res.json();
+
+        if (data.success) {
+          document.getElementById('nome-empresa').textContent = data.data.nome;
+          document.getElementById('loading').style.display = 'none';
+          document.getElementById('tela-cadastro').style.display = 'block';
+        } else {
+          if (data.ja_cadastrado) {
+            mostrarErro('Você já cadastrou sua senha. Faça login normalmente.');
+          } else {
+            mostrarErro(data.error || 'Token inválido ou expirado.');
+          }
+        }
+      } catch (error) {
+        console.error('Erro:', error);
+        mostrarErro('Erro de conexão. Tente novamente.');
+      }
+    }
+
+    function mostrarErro(msg) {
+      document.getElementById('loading').style.display = 'none';
+      document.getElementById('msg-erro').textContent = msg;
+      document.getElementById('tela-erro').style.display = 'block';
+    }
+
+    async function cadastrarSenha(e) {
+      e.preventDefault();
+
+      const senha = document.getElementById('senha').value;
+      const confirmarSenha = document.getElementById('confirmar-senha').value;
+      const erroEl = document.getElementById('erro-cadastro');
+      const btnEl = document.getElementById('btn-cadastrar');
+
+      erroEl.style.display = 'none';
+
+      // Validações
+      if (senha.length < 6) {
+        erroEl.textContent = 'A senha deve ter pelo menos 6 caracteres';
+        erroEl.style.display = 'block';
+        return;
+      }
+
+      if (senha !== confirmarSenha) {
+        erroEl.textContent = 'As senhas não conferem';
+        erroEl.style.display = 'block';
+        return;
+      }
+
+      btnEl.disabled = true;
+      btnEl.textContent = 'Cadastrando...';
+
+      try {
+        const res = await fetch('/api/auth/admin/cadastrar-senha', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token,
+            senha,
+            confirmar_senha: confirmarSenha
+          })
+        });
+
+        const data = await res.json();
+
+        if (data.success) {
+          document.getElementById('tela-cadastro').style.display = 'none';
+          document.getElementById('tela-sucesso').style.display = 'block';
+        } else {
+          erroEl.textContent = data.error || 'Erro ao cadastrar senha';
+          erroEl.style.display = 'block';
+          btnEl.disabled = false;
+          btnEl.textContent = 'Cadastrar Senha';
+        }
+      } catch (error) {
+        console.error('Erro:', error);
+        erroEl.textContent = 'Erro de conexão. Tente novamente.';
+        erroEl.style.display = 'block';
+        btnEl.disabled = false;
+        btnEl.textContent = 'Cadastrar Senha';
+      }
+    }
+  </script>
+</body>
+</html>

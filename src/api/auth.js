@@ -1,6 +1,7 @@
 // ========================================
 // REBECA - API AUTENTICAÇÃO
-// Login de motoristas
+// Login de motoristas e admins
+// CORRIGIDO: Sessão do admin salva no banco
 // ========================================
 
 const express = require('express');
@@ -31,15 +32,15 @@ router.post('/motorista/login', async (req, res) => {
     const { telefone, senha } = req.body;
 
     if (!telefone || !senha) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Telefone e senha são obrigatórios' 
+      return res.status(400).json({
+        success: false,
+        error: 'Telefone e senha são obrigatórios'
       });
     }
 
     // Buscar motorista com dados da empresa
     const result = await query(
-      `SELECT m.*, e.id as empresa_id, e.nome as empresa_nome, 
+      `SELECT m.*, e.id as empresa_id, e.nome as empresa_nome,
               e.white_label, e.nome_exibido
        FROM motoristas m
        LEFT JOIN empresas e ON m.empresa_id = e.id
@@ -48,9 +49,9 @@ router.post('/motorista/login', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(401).json({ 
-        success: false, 
-        error: 'Telefone ou senha incorretos' 
+      return res.status(401).json({
+        success: false,
+        error: 'Telefone ou senha incorretos'
       });
     }
 
@@ -58,30 +59,29 @@ router.post('/motorista/login', async (req, res) => {
 
     // Verificar senha
     if (motorista.senha_hash !== hashSenha(senha)) {
-      return res.status(401).json({ 
-        success: false, 
-        error: 'Telefone ou senha incorretos' 
+      return res.status(401).json({
+        success: false,
+        error: 'Telefone ou senha incorretos'
       });
     }
 
     // Gerar token
     const token = gerarToken();
-    const expiraEm = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 horas
+    const expiraEm = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 dias
 
     // Salvar token
     await query(
-      `UPDATE motoristas 
+      `UPDATE motoristas
        SET token_sessao = $1, token_expira_em = $2, atualizado_em = CURRENT_TIMESTAMP
        WHERE id = $3`,
       [token, expiraEm, motorista.id]
     );
 
     // Determinar nome a exibir (White Label)
-    const nomeExibido = motorista.white_label && motorista.nome_exibido 
-      ? motorista.nome_exibido 
-      : 'UBMAX';
+    const nomeExibido = motorista.white_label && motorista.nome_exibido
+      ? motorista.nome_exibido
+      : motorista.empresa_nome;
 
-    // Retornar dados (sem senha)
     res.json({
       success: true,
       data: {
@@ -90,14 +90,13 @@ router.post('/motorista/login', async (req, res) => {
         telefone: motorista.telefone,
         veiculo_modelo: motorista.veiculo_modelo,
         veiculo_cor: motorista.veiculo_cor,
-        veiculo_placa: motorista.veiculo_placa,
         status: motorista.status,
+        disponivel: motorista.disponivel,
         token,
-        // Dados da empresa para White Label
-        empresa_id: motorista.empresa_id,
-        empresa_nome: motorista.empresa_nome,
-        white_label: motorista.white_label || false,
-        nome_exibido: nomeExibido
+        empresa: {
+          id: motorista.empresa_id,
+          nome: nomeExibido
+        }
       }
     });
 
@@ -108,19 +107,19 @@ router.post('/motorista/login', async (req, res) => {
 });
 
 /**
- * POST /api/auth/motorista/verificar
- * Verifica se token é válido
+ * GET /api/auth/motorista/verificar
+ * Verifica se token do motorista é válido
  */
-router.post('/motorista/verificar', async (req, res) => {
+router.get('/motorista/verificar', async (req, res) => {
   try {
-    const { token } = req.body;
+    const token = req.headers.authorization?.replace('Bearer ', '') || req.query.token;
 
     if (!token) {
       return res.status(401).json({ success: false, error: 'Token não fornecido' });
     }
 
     const result = await query(
-      `SELECT * FROM motoristas 
+      `SELECT * FROM motoristas
        WHERE token_sessao = $1 AND token_expira_em > NOW() AND ativo = true`,
       [token]
     );
@@ -160,8 +159,8 @@ router.post('/motorista/logout', async (req, res) => {
 
     if (token) {
       await query(
-        `UPDATE motoristas 
-         SET token_sessao = NULL, token_expira_em = NULL, 
+        `UPDATE motoristas
+         SET token_sessao = NULL, token_expira_em = NULL,
              status = 'offline', disponivel = false
          WHERE token_sessao = $1`,
         [token]
@@ -186,9 +185,9 @@ router.post('/motorista/acesso', async (req, res) => {
     const { token_acesso } = req.body;
 
     if (!token_acesso) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Token de acesso não fornecido. Solicite o link ao administrador.' 
+      return res.status(400).json({
+        success: false,
+        error: 'Token de acesso não fornecido. Solicite o link ao administrador.'
       });
     }
 
@@ -199,9 +198,9 @@ router.post('/motorista/acesso', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(401).json({ 
-        success: false, 
-        error: 'Link inválido ou expirado. Solicite um novo link ao administrador.' 
+      return res.status(401).json({
+        success: false,
+        error: 'Link inválido ou expirado. Solicite um novo link ao administrador.'
       });
     }
 
@@ -209,11 +208,11 @@ router.post('/motorista/acesso', async (req, res) => {
 
     // Gerar token de sessão
     const tokenSessao = gerarToken();
-    const expiraEm = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 horas
+    const expiraEm = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 dias
 
     // Salvar token de sessão
     await query(
-      `UPDATE motoristas 
+      `UPDATE motoristas
        SET token_sessao = $1, token_expira_em = $2, atualizado_em = CURRENT_TIMESTAMP
        WHERE id = $3`,
       [tokenSessao, expiraEm, motorista.id]
@@ -281,16 +280,16 @@ router.get('/motorista/validar-token', async (req, res) => {
 
     // Buscar motorista pelo token
     const result = await query(
-      `SELECT id, nome, telefone, veiculo, cor, placa, primeiro_acesso, senha_hash
+      `SELECT id, nome, telefone, veiculo_modelo as veiculo, veiculo_cor as cor, veiculo_placa as placa, primeiro_acesso, senha_hash
        FROM motoristas
        WHERE token_acesso = $1 AND ativo = true`,
       [token]
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Link inválido ou expirado. Solicite um novo ao administrador.' 
+      return res.status(404).json({
+        success: false,
+        error: 'Link inválido ou expirado. Solicite um novo ao administrador.'
       });
     }
 
@@ -336,16 +335,16 @@ router.post('/motorista/configurar-acesso', async (req, res) => {
     const { token, senha } = req.body;
 
     if (!token || !senha) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Token e senha são obrigatórios' 
+      return res.status(400).json({
+        success: false,
+        error: 'Token e senha são obrigatórios'
       });
     }
 
     if (senha.length < 4) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Senha deve ter pelo menos 4 caracteres' 
+      return res.status(400).json({
+        success: false,
+        error: 'Senha deve ter pelo menos 4 caracteres'
       });
     }
 
@@ -356,16 +355,15 @@ router.post('/motorista/configurar-acesso', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Token inválido' 
+      return res.status(404).json({
+        success: false,
+        error: 'Token inválido'
       });
     }
 
     const motorista = result.rows[0];
 
     // Hash da senha
-    const crypto = require('crypto');
     const senhaHash = crypto.createHash('sha256').update(senha).digest('hex');
 
     // Gerar token de sessão
@@ -374,9 +372,9 @@ router.post('/motorista/configurar-acesso', async (req, res) => {
 
     // Atualizar motorista
     await query(
-      `UPDATE motoristas 
-       SET senha_hash = $1, 
-           token_sessao = $2, 
+      `UPDATE motoristas
+       SET senha_hash = $1,
+           token_sessao = $2,
            token_expira_em = $3,
            primeiro_acesso = false,
            atualizado_em = NOW()
@@ -443,24 +441,24 @@ router.get('/admin/validar-token', async (req, res) => {
     const { token } = req.query;
 
     if (!token) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Token não fornecido' 
+      return res.status(400).json({
+        success: false,
+        error: 'Token não fornecido'
       });
     }
 
     // Buscar empresa pelo token
     const result = await query(
-      `SELECT id, nome, email, telefone, token_primeiro_acesso, admin_senha_hash
-       FROM empresas 
+      `SELECT id, nome, email, telefone_adm as telefone, token_primeiro_acesso, admin_senha_hash
+       FROM empresas
        WHERE token_primeiro_acesso = $1`,
       [token]
     );
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Token inválido ou expirado' 
+      return res.status(404).json({
+        success: false,
+        error: 'Token inválido ou expirado'
       });
     }
 
@@ -468,8 +466,8 @@ router.get('/admin/validar-token', async (req, res) => {
 
     // Verificar se já cadastrou senha
     if (empresa.admin_senha_hash) {
-      return res.status(400).json({ 
-        success: false, 
+      return res.status(400).json({
+        success: false,
         error: 'Senha já cadastrada. Faça login normalmente.',
         ja_cadastrado: true
       });
@@ -497,54 +495,54 @@ router.post('/admin/cadastrar-senha', async (req, res) => {
     const { token, senha, confirmar_senha } = req.body;
 
     if (!token || !senha || !confirmar_senha) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Todos os campos são obrigatórios' 
+      return res.status(400).json({
+        success: false,
+        error: 'Todos os campos são obrigatórios'
       });
     }
 
     if (senha !== confirmar_senha) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'As senhas não conferem' 
+      return res.status(400).json({
+        success: false,
+        error: 'As senhas não conferem'
       });
     }
 
     if (senha.length < 6) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'A senha deve ter pelo menos 6 caracteres' 
+      return res.status(400).json({
+        success: false,
+        error: 'A senha deve ter pelo menos 6 caracteres'
       });
     }
 
     // Buscar empresa pelo token
     const empresa = await query(
       `SELECT id, nome, email, token_primeiro_acesso, admin_senha_hash
-       FROM empresas 
+       FROM empresas
        WHERE token_primeiro_acesso = $1`,
       [token]
     );
 
     if (empresa.rows.length === 0) {
-      return res.status(404).json({ 
-        success: false, 
-        error: 'Token inválido ou expirado' 
+      return res.status(404).json({
+        success: false,
+        error: 'Token inválido ou expirado'
       });
     }
 
     if (empresa.rows[0].admin_senha_hash) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Senha já cadastrada' 
+      return res.status(400).json({
+        success: false,
+        error: 'Senha já cadastrada'
       });
     }
 
     // Cadastrar senha e limpar token
     const senhaHash = hashSenha(senha);
-    
+
     await query(
-      `UPDATE empresas 
-       SET admin_senha_hash = $1, 
+      `UPDATE empresas
+       SET admin_senha_hash = $1,
            token_primeiro_acesso = NULL,
            atualizado_em = CURRENT_TIMESTAMP
        WHERE id = $2`,
@@ -569,15 +567,16 @@ router.post('/admin/cadastrar-senha', async (req, res) => {
 /**
  * POST /api/auth/admin/login
  * Login do ADM da frota
+ * CORRIGIDO: Agora salva token no banco com expiração de 7 dias
  */
 router.post('/admin/login', async (req, res) => {
   try {
     const { email, senha } = req.body;
 
     if (!email || !senha) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'Email e senha são obrigatórios' 
+      return res.status(400).json({
+        success: false,
+        error: 'Email e senha são obrigatórios'
       });
     }
 
@@ -591,9 +590,9 @@ router.post('/admin/login', async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.status(401).json({ 
-        success: false, 
-        error: 'Email ou senha incorretos' 
+      return res.status(401).json({
+        success: false,
+        error: 'Email ou senha incorretos'
       });
     }
 
@@ -601,8 +600,8 @@ router.post('/admin/login', async (req, res) => {
 
     // Verificar se cadastrou senha
     if (!empresa.admin_senha_hash) {
-      return res.status(400).json({ 
-        success: false, 
+      return res.status(400).json({
+        success: false,
         error: 'Você ainda não cadastrou sua senha. Use o link de primeiro acesso.',
         primeiro_acesso: true
       });
@@ -610,16 +609,16 @@ router.post('/admin/login', async (req, res) => {
 
     // Verificar senha
     if (empresa.admin_senha_hash !== hashSenha(senha)) {
-      return res.status(401).json({ 
-        success: false, 
-        error: 'Email ou senha incorretos' 
+      return res.status(401).json({
+        success: false,
+        error: 'Email ou senha incorretos'
       });
     }
 
     // Verificar se empresa está ativa
     if (empresa.status === 'bloqueada' || empresa.status === 'cancelada') {
-      return res.status(403).json({ 
-        success: false, 
+      return res.status(403).json({
+        success: false,
         error: `Empresa ${empresa.status}. Entre em contato com o suporte.`,
         status: empresa.status
       });
@@ -627,6 +626,19 @@ router.post('/admin/login', async (req, res) => {
 
     // Gerar token de sessão
     const tokenSessao = gerarToken();
+    const expiraEm = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 DIAS
+
+    // CORREÇÃO: SALVAR TOKEN NO BANCO
+    await query(
+      `UPDATE empresas
+       SET admin_token_sessao = $1,
+           admin_token_expira_em = $2,
+           atualizado_em = CURRENT_TIMESTAMP
+       WHERE id = $3`,
+      [tokenSessao, expiraEm, empresa.id]
+    );
+
+    console.log(`✅ Admin ${empresa.nome} logou - Token expira em 7 dias`);
 
     res.json({
       success: true,
@@ -636,7 +648,7 @@ router.post('/admin/login', async (req, res) => {
           id: empresa.id,
           nome: empresa.nome,
           email: empresa.email,
-          telefone: empresa.telefone,
+          telefone: empresa.telefone_adm,
           status: empresa.status,
           plano: empresa.plano_nome,
           whatsapp_rebeca: empresa.whatsapp_rebeca,
@@ -646,6 +658,132 @@ router.post('/admin/login', async (req, res) => {
     });
   } catch (error) {
     console.error('Erro login admin:', error);
+    res.status(500).json({ success: false, error: 'Erro interno' });
+  }
+});
+
+/**
+ * GET /api/auth/admin/verificar
+ * NOVO: Verifica se token do admin é válido
+ */
+router.get('/admin/verificar', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '') || req.query.token;
+
+    if (!token) {
+      return res.status(401).json({ success: false, error: 'Token não fornecido' });
+    }
+
+    // Buscar empresa pelo token de sessão
+    const result = await query(
+      `SELECT e.*, p.nome as plano_nome
+       FROM empresas e
+       LEFT JOIN planos p ON e.plano_id = p.id
+       WHERE e.admin_token_sessao = $1 
+       AND e.admin_token_expira_em > NOW()
+       AND e.ativo = true`,
+      [token]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ success: false, error: 'Sessão expirada. Faça login novamente.' });
+    }
+
+    const empresa = result.rows[0];
+
+    res.json({
+      success: true,
+      data: {
+        empresa: {
+          id: empresa.id,
+          nome: empresa.nome,
+          email: empresa.email,
+          telefone: empresa.telefone_adm,
+          status: empresa.status,
+          plano: empresa.plano_nome,
+          whatsapp_rebeca: empresa.whatsapp_rebeca,
+          data_vencimento: empresa.data_vencimento
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Erro verificar token admin:', error);
+    res.status(500).json({ success: false, error: 'Erro interno' });
+  }
+});
+
+/**
+ * POST /api/auth/admin/logout
+ * NOVO: Logout do admin
+ */
+router.post('/admin/logout', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '') || req.body.token;
+
+    if (token) {
+      await query(
+        `UPDATE empresas
+         SET admin_token_sessao = NULL,
+             admin_token_expira_em = NULL
+         WHERE admin_token_sessao = $1`,
+        [token]
+      );
+    }
+
+    res.json({ success: true, message: 'Logout realizado com sucesso' });
+
+  } catch (error) {
+    console.error('Erro logout admin:', error);
+    res.status(500).json({ success: false, error: 'Erro interno' });
+  }
+});
+
+/**
+ * POST /api/auth/admin/renovar
+ * NOVO: Renova o token do admin (estende a sessão)
+ */
+router.post('/admin/renovar', async (req, res) => {
+  try {
+    const token = req.headers.authorization?.replace('Bearer ', '') || req.body.token;
+
+    if (!token) {
+      return res.status(401).json({ success: false, error: 'Token não fornecido' });
+    }
+
+    // Verificar token atual
+    const result = await query(
+      `SELECT id, nome FROM empresas
+       WHERE admin_token_sessao = $1 AND admin_token_expira_em > NOW()`,
+      [token]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ success: false, error: 'Token inválido ou expirado' });
+    }
+
+    // Gerar novo token
+    const novoToken = gerarToken();
+    const expiraEm = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 dias
+
+    await query(
+      `UPDATE empresas
+       SET admin_token_sessao = $1,
+           admin_token_expira_em = $2
+       WHERE id = $3`,
+      [novoToken, expiraEm, result.rows[0].id]
+    );
+
+    res.json({
+      success: true,
+      data: {
+        token: novoToken,
+        expira_em: expiraEm
+      }
+    });
+
+  } catch (error) {
+    console.error('Erro renovar token:', error);
     res.status(500).json({ success: false, error: 'Erro interno' });
   }
 });

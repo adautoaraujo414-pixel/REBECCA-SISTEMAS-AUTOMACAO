@@ -1,0 +1,17 @@
+0000000000000000000000000000000000000000 57cb925882c38cdce7ef79cbfce87bb914714195 adautoaraujo414-pixel <adautoaraujo414@gmail.com> 1768520237 -0300	commit (initial): Initial commit - clean
+57cb925882c38cdce7ef79cbfce87bb914714195 57cb925882c38cdce7ef79cbfce87bb914714195 adautoaraujo414-pixel <adautoaraujo414@gmail.com> 1768520245 -0300	Branch: renamed refs/heads/master to refs/heads/main
+57cb925882c38cdce7ef79cbfce87bb914714195 6a4e1e0590e370ecfaa7b76986888e35e6571fff adautoaraujo414-pixel <adautoaraujo414@gmail.com> 1768522090 -0300	commit: Fix EvolutionClient export
+6a4e1e0590e370ecfaa7b76986888e35e6571fff cedb09173bf7d9562c1a8c6f6cff5b4630921b6f adautoaraujo414-pixel <adautoaraujo414@gmail.com> 1768524067 -0300	commit: Force IPv4 for database connection
+cedb09173bf7d9562c1a8c6f6cff5b4630921b6f bfeb2cf6debfb620823c27d018a69e4a6c98e90d adautoaraujo414-pixel <adautoaraujo414@gmail.com> 1768525335 -0300	commit: Add complete database.js with IPv4 support
+bfeb2cf6debfb620823c27d018a69e4a6c98e90d 7c0ccf122c5ee5496df7b1349dd621ae2e83b312 adautoaraujo414-pixel <adautoaraujo414@gmail.com> 1768526118 -0300	commit: Fix migrate.js to use database.js with IPv4
+7c0ccf122c5ee5496df7b1349dd621ae2e83b312 895dda4d42f4dbae35781aa69a0c44ba89069fd7 adautoaraujo414-pixel <adautoaraujo414@gmail.com> 1768527305 -0300	commit: Fix database.js with IPv4 support
+895dda4d42f4dbae35781aa69a0c44ba89069fd7 88b47f5663bc974c05b6a662dc8d959e2b3df538 adautoaraujo414-pixel <adautoaraujo414@gmail.com> 1768529123 -0300	commit: Force IPv4 without connectionString
+88b47f5663bc974c05b6a662dc8d959e2b3df538 0cfddb87e2094fe9443dcf510b9fed83311b84bd adautoaraujo414-pixel <adautoaraujo414@gmail.com> 1768534142 -0300	commit: Fix index.html - remove duplicate code
+0cfddb87e2094fe9443dcf510b9fed83311b84bd 4f7d242d9f073211c6db1bb9d883d1d548da975a adautoaraujo414-pixel <adautoaraujo414@gmail.com> 1768536876 -0300	commit: fix
+4f7d242d9f073211c6db1bb9d883d1d548da975a e8fb77658180348f183e08d3e88c75c957e3bdaf adautoaraujo414-pixel <adautoaraujo414@gmail.com> 1768537324 -0300	commit: fix evolution
+e8fb77658180348f183e08d3e88c75c957e3bdaf 1329a57855f7c2b8b8d9ab4bf81583c2cfbb1c96 adautoaraujo414-pixel <adautoaraujo414@gmail.com> 1768537865 -0300	commit: reset
+1329a57855f7c2b8b8d9ab4bf81583c2cfbb1c96 f2824b4c0c1dd7772e6ac99460194b4db2150d7b adautoaraujo414-pixel <adautoaraujo414@gmail.com> 1768539051 -0300	commit: tela cadastro
+f2824b4c0c1dd7772e6ac99460194b4db2150d7b c369298850dfd42300ca1a2b2c4f24703d2150a2 adautoaraujo414-pixel <adautoaraujo414@gmail.com> 1768539471 -0300	commit: sistema limpo
+c369298850dfd42300ca1a2b2c4f24703d2150a2 1049e2bdb3277cf6f0ccc6b5107fc39f247c065b adautoaraujo414-pixel <adautoaraujo414@gmail.com> 1768540448 -0300	commit: fix admin
+1049e2bdb3277cf6f0ccc6b5107fc39f247c065b 4caf12d28ca12e265e01e4b0feb94f29fc8f3d8e adautoaraujo414-pixel <adautoaraujo414@gmail.com> 1768576460 -0300	commit: whatsapp qrcode
+4caf12d28ca12e265e01e4b0feb94f29fc8f3d8e 451d060432736b1220d03ea262d8501633501093 adautoaraujo414-pixel <adautoaraujo414@gmail.com> 1768577027 -0300	commit: fix admin

@@ -1,0 +1,740 @@
+// ========================================
+// REBECA - FLUXO DE CONVERSA
+// O cérebro da Rebeca (com IA)
+// FLUXO CORRETO:
+// 1. Localização ou Endereço
+// 2. "Encontrei motorista a X min. Posso mandar?"
+// 3. Cliente confirma
+// 4. "Certinho, está a caminho!" + link rastreamento
+// ========================================
+
+const { OpenAIService, GeocodingService } = require('../services');
+const {
+  ClienteRepository,
+  MotoristaRepository,
+  CorridaRepository,
+  ConversaRepository,
+  MensagemRepository,
+  ConfiguracaoRepository,
+  EmpresaRepository,
+} = require('../database');
+const { 
+  delayResposta, 
+  delayConfirmacao, 
+  delayBuscaMotorista,
+  dentroDoHorario,
+} = require('../utils');
+
+const { ETAPAS } = ConversaRepository;
+const { INTENCOES } = OpenAIService;
+
+class FluxoConversa {
+  constructor(whatsapp) {
+    this.whatsapp = whatsapp;
+    // Cache de mensagens enviadas por telefone (para não repetir)
+    this.mensagensEnviadas = new Map();
+  }
+
+  /**
+   * Obtém mensagens anteriores de um telefone
+   */
+  getMensagensAnteriores(telefone) {
+    return this.mensagensEnviadas.get(telefone) || [];
+  }
+
+  /**
+   * Adiciona mensagem ao histórico
+   */
+  addMensagemEnviada(telefone, mensagem) {
+    const anteriores = this.getMensagensAnteriores(telefone);
+    anteriores.push(mensagem);
+    // Manter apenas últimas 10 mensagens
+    if (anteriores.length > 10) {
+      anteriores.shift();
+    }
+    this.mensagensEnviadas.set(telefone, anteriores);
+  }
+
+  /**
+   * Limpa histórico de mensagens
+   */
+  limparHistorico(telefone) {
+    this.mensagensEnviadas.delete(telefone);
+  }
+
+  /**
+   * Processa uma mensagem recebida
+   * @param {Object} msg - Mensagem do WhatsApp
+   */
+  async processar(msg) {
+    const telefone = msg.from.replace('@c.us', '').replace('@s.whatsapp.net', '');
+    let texto = msg.body || '';
+    const ehLocalizacao = msg.type === 'location';
+    const ehAudio = msg.type === 'ptt' || msg.type === 'audio';
+
+    console.log(`📩 Mensagem de ${telefone}: ${texto || (ehAudio ? '[ÁUDIO]' : '[localização]')}`);
+
+    // Se for áudio, transcrever primeiro
+    if (ehAudio) {
+      try {
+        const media = await msg.downloadMedia();
+        if (media && media.data) {
+          const audioBuffer = Buffer.from(media.data, 'base64');
+          const transcricao = await OpenAIService.transcreverAudio(audioBuffer, media.mimetype);
+          if (transcricao) {
+            texto = transcricao;
+            console.log(`🎤 Áudio transcrito: ${texto}`);
+          }
+        }
+      } catch (error) {
+        console.error('❌ Erro ao processar áudio:', error);
+      }
+    }
+
+    // Registrar mensagem de entrada
+    await MensagemRepository.registrarEntrada(
+      telefone, 
+      ehLocalizacao ? `[LOCALIZAÇÃO] ${msg.location?.latitude}, ${msg.location?.longitude}` : 
+      ehAudio ? `[ÁUDIO] ${texto}` : texto,
+      ehLocalizacao ? 'localizacao' : ehAudio ? 'audio' : 'texto'
+    );
+
+    // Verificar horário de funcionamento
+    if (!dentroDoHorario()) {
+      const resposta = await OpenAIService.gerarResposta('FORA_HORARIO', {}, []);
+      if (resposta) {
+        await this.responder(msg, resposta);
+      } else {
+        await this.responder(msg, 'Oi! Estamos fora do horário de atendimento no momento. Retorne mais tarde 👍');
+      }
+      return;
+    }
+
+    // Buscar ou criar cliente
+    const cliente = await ClienteRepository.buscarOuCriar(telefone);
+    
+    // Buscar estado da conversa
+    let conversa = await ConversaRepository.buscarPorTelefone(telefone);
+    
+    // Se não existe conversa, criar uma nova
+    if (!conversa) {
+      conversa = await ConversaRepository.upsert(
+        telefone,
+        cliente.id,
+        ETAPAS.INICIO,
+        {}
+      );
+    }
+
+    // Usar IA para identificar intenção
+    const { intencao, endereco_extraido, confianca } = await OpenAIService.identificarIntencao(
+      texto,
+      conversa.etapa
+    );
+
+    console.log(`🧠 Intenção: ${intencao} (${(confianca * 100).toFixed(0)}%)`);
+
+    // Processar baseado na etapa atual e intenção
+    await this.processarComIA(msg, cliente, conversa, texto, ehLocalizacao, intencao, endereco_extraido);
+  }
+
+  /**
+   * Processa usando IA para interpretação
+   */
+  async processarComIA(msg, cliente, conversa, texto, ehLocalizacao, intencao, enderecoExtraido) {
+    const telefone = msg.from.replace('@c.us', '').replace('@s.whatsapp.net', '');
+    const etapa = conversa.etapa;
+    const ehRecorrente = cliente.recorrente;
+    const anteriores = this.getMensagensAnteriores(telefone);
+
+    console.log(`📍 Etapa: ${etapa} | Intenção: ${intencao} | Recorrente: ${ehRecorrente}`);
+
+    // Se quer cancelar em qualquer momento
+    if (intencao === INTENCOES.QUER_CANCELAR) {
+      return await this.processarCancelamento(msg, conversa, anteriores);
+    }
+
+    // Se pergunta valor
+    if (intencao === INTENCOES.PERGUNTA_VALOR) {
+      return await this.responderValor(msg, conversa, anteriores);
+    }
+
+    // Se pede desconto
+    if (intencao === INTENCOES.PEDE_DESCONTO) {
+      return await this.responderSemDesconto(msg, anteriores);
+    }
+
+    switch (etapa) {
+      case ETAPAS.INICIO:
+        await this.etapaInicio(msg, cliente, ehRecorrente, intencao, texto, ehLocalizacao, enderecoExtraido, anteriores);
+        break;
+
+      case ETAPAS.AGUARDANDO_RESPOSTA_INICIAL:
+        await this.etapaAguardandoResposta(msg, cliente, conversa, ehRecorrente, intencao, texto, ehLocalizacao, enderecoExtraido, anteriores);
+        break;
+
+      case ETAPAS.AGUARDANDO_LOCALIZACAO:
+        await this.etapaAguardandoLocalizacao(msg, cliente, conversa, texto, ehLocalizacao, intencao, enderecoExtraido, anteriores);
+        break;
+
+      // ========================================
+      // ETAPA: CONFIRMANDO SE PODE MANDAR MOTORISTA
+      // ========================================
+      case ETAPAS.AGUARDANDO_REFERENCIA:
+        await this.etapaAguardandoReferencia(msg, cliente, conversa, texto, intencao, anteriores);
+        break;
+      case ETAPAS.CONFIRMANDO:
+        await this.etapaConfirmandoMotorista(msg, cliente, conversa, texto, intencao, anteriores);
+        break;
+
+      case ETAPAS.BUSCANDO_MOTORISTA:
+        await this.responderAguardando(msg, anteriores);
+        break;
+
+      case ETAPAS.AGUARDANDO_MOTORISTA:
+      case ETAPAS.EM_CORRIDA:
+        await this.etapaEmCorrida(msg, conversa, texto, intencao, anteriores);
+        break;
+
+      default:
+        await ConversaRepository.resetar(telefone);
+        this.limparHistorico(telefone);
+        await this.etapaInicio(msg, cliente, ehRecorrente, intencao, texto, ehLocalizacao, enderecoExtraido, []);
+    }
+  }
+
+  /**
+   * Etapa inicial - Saudação
+   */
+  async etapaInicio(msg, cliente, ehRecorrente, intencao, texto, ehLocalizacao, enderecoExtraido, anteriores) {
+    const telefone = msg.from.replace('@c.us', '').replace('@s.whatsapp.net', '');
+
+    await delayResposta();
+
+    // Se já mandou localização de cara, processar direto
+    if (ehLocalizacao) {
+      const resposta = await OpenAIService.gerarResposta('CONFIRMACAO_RECEBIMENTO', {}, anteriores);
+      await this.responder(msg, resposta || 'Recebi 👍');
+
+      const origem = { 
+        latitude: msg.location?.latitude, 
+        longitude: msg.location?.longitude, 
+        endereco: msg.location?.address || 'Localização recebida' 
+      };
+
+      await this.buscarEPerguntar(msg, cliente, origem, [...anteriores, resposta]);
+      return;
+    }
+
+    // Se mandou endereço de cara, geocodificar
+    if (intencao === INTENCOES.ENVIOU_ENDERECO || enderecoExtraido) {
+      const enderecoDigitado = enderecoExtraido || texto;
+      
+      await this.responder(msg, 'Deixa eu encontrar esse endereço... 🔍');
+      
+      const origem = await this.geocodificarEndereco(msg, enderecoDigitado, anteriores);
+      
+      if (origem) {
+        await this.buscarEPerguntar(msg, cliente, origem, anteriores);
+      }
+      // Se não encontrou, geocodificarEndereco já pediu localização
+      return;
+    }
+
+    // Saudação normal
+    const resposta = await OpenAIService.gerarResposta('SAUDACAO', {}, anteriores);
+    await this.responder(msg, resposta || 'Oi, tudo bem?');
+
+    await ConversaRepository.upsert(telefone, cliente.id, ETAPAS.AGUARDANDO_RESPOSTA_INICIAL, { ehRecorrente });
+  }
+
+  /**
+   * Aguardando resposta inicial
+   */
+  async etapaAguardandoResposta(msg, cliente, conversa, ehRecorrente, intencao, texto, ehLocalizacao, enderecoExtraido, anteriores) {
+    const telefone = msg.from.replace('@c.us', '').replace('@s.whatsapp.net', '');
+
+    await delayResposta();
+
+    // Se já mandou localização, processar direto
+    if (ehLocalizacao) {
+      const origem = { 
+        latitude: msg.location?.latitude, 
+        longitude: msg.location?.longitude, 
+        endereco: msg.location?.address || 'Localização recebida' 
+      };
+
+      await this.buscarEPerguntar(msg, cliente, origem, anteriores);
+      return;
+    }
+
+    // Se mandou endereço, geocodificar
+    if (intencao === INTENCOES.ENVIOU_ENDERECO || enderecoExtraido) {
+      const enderecoDigitado = enderecoExtraido || texto;
+      
+      await this.responder(msg, 'Deixa eu encontrar esse endereço... 🔍');
+      
+      const origem = await this.geocodificarEndereco(msg, enderecoDigitado, anteriores);
+      
+      if (origem) {
+        await this.buscarEPerguntar(msg, cliente, origem, anteriores);
+      }
+      return;
+    }
+
+    // Confirmar e pedir localização
+    const respConfirma = await OpenAIService.gerarResposta('CONFIRMACAO_RECEBIMENTO', {}, anteriores);
+    await this.responder(msg, respConfirma || 'Claro 👍');
+
+    await delayResposta();
+
+    const tipoLocal = ehRecorrente ? 'PEDIR_LOCALIZACAO_RECORRENTE' : 'PEDIR_LOCALIZACAO';
+    const respLocal = await OpenAIService.gerarResposta(tipoLocal, {}, [...anteriores, respConfirma]);
+    await this.responder(msg, respLocal || 'Pode me enviar o endereço ou a localização?');
+
+    await ConversaRepository.atualizarEtapa(telefone, ETAPAS.AGUARDANDO_LOCALIZACAO);
+  }
+
+  /**
+   * Aguardando localização ou endereço
+   */
+  async etapaAguardandoLocalizacao(msg, cliente, conversa, texto, ehLocalizacao, intencao, enderecoExtraido, anteriores) {
+    const telefone = msg.from.replace('@c.us', '').replace('@s.whatsapp.net', '');
+
+    let origem = {};
+
+    // Localização do WhatsApp (já tem coordenadas!)
+    if (ehLocalizacao && msg.location) {
+      origem = {
+        latitude: msg.location.latitude,
+        longitude: msg.location.longitude,
+        endereco: msg.location.address || 'Localização recebida',
+      };
+      console.log(`📍 Localização WhatsApp recebida: ${origem.latitude}, ${origem.longitude}`);
+    } 
+    // Endereço digitado - GEOCODIFICAR!
+    else {
+      const enderecoDigitado = enderecoExtraido || texto;
+      
+      await delayResposta();
+      await this.responder(msg, 'Deixa eu encontrar esse endereço... 🔍');
+
+      // GEOCODIFICAR ENDEREÇO
+      const cidadeEmpresa = await EmpresaRepository.getCidade(cliente.empresa_id || 1);
+      const geo = await GeocodingService.geocodificar(enderecoDigitado, cidadeEmpresa);
+
+      if (geo && geo.latitude && geo.longitude) {
+        origem = {
+          latitude: geo.latitude,
+          longitude: geo.longitude,
+          endereco: geo.enderecoFormatado || enderecoDigitado,
+          bairro: geo.bairro,
+          cidade: geo.cidade,
+        };
+        console.log(`✅ Endereço geocodificado: ${origem.endereco}`);
+        console.log(`   📍 Lat: ${origem.latitude}, Lng: ${origem.longitude}`);
+      } else {
+        // Não encontrou - perguntar de novo
+        console.log(`❌ Não foi possível encontrar: "${enderecoDigitado}"`);
+        
+        await delayResposta();
+        const respNaoEncontrei = await OpenAIService.gerarResposta('ENDERECO_NAO_ENCONTRADO', {}, anteriores);
+        await this.responder(msg, respNaoEncontrei || 'Não consegui encontrar esse endereço 😕 Pode enviar a localização pelo WhatsApp? É só clicar no 📎 e depois em "Localização"');
+        return; // Continua aguardando
+      }
+    }
+
+    await delayResposta();
+
+    // Confirmar recebimento
+    const respPerfeito = await OpenAIService.gerarResposta('RECEBI_LOCALIZACAO', {}, anteriores);
+    await this.responder(msg, respPerfeito || 'Achei! ✅');
+
+    // ========================================
+    // BUSCAR MOTORISTA E PERGUNTAR SE PODE MANDAR
+    // ========================================
+    await this.buscarEPerguntar(msg, cliente, origem, [...anteriores, respPerfeito]);
+  }
+
+  /**
+   * ========================================
+   * BUSCAR MOTORISTA E PERGUNTAR SE PODE MANDAR
+   * Fluxo correto: encontra motorista → pergunta → confirma → envia
+   * ========================================
+   */
+  async buscarEPerguntar(msg, cliente, origem, anteriores) {
+    const telefone = msg.from.replace('@c.us', '').replace('@s.whatsapp.net', '');
+
+    await delayResposta();
+
+    // NOVA LÓGICA: Perguntar referência ANTES de buscar motorista
+    await this.perguntarReferencia(msg, cliente, origem, anteriores);
+  }
+
+  /**
+   * ========================================
+   * PERGUNTAR REFERÊNCIA APÓS ENDEREÇO
+   * ========================================
+   */
+  async perguntarReferencia(msg, cliente, origem, anteriores) {
+    const telefone = msg.from.replace('@c.us', '').replace('@s.whatsapp.net', '');
+
+    // Confirmar endereço e pedir referência
+    const msgReferencia = `📍 Entendi! Você está em:\n*${origem.endereco}*\n\nTem algum ponto de referência?\n(Ex: próximo ao mercado, portão azul...)\n\nSe não tiver, responda "não"`;
+    
+    await this.responder(msg, msgReferencia);
+
+    // Salvar dados e mudar para etapa de referência
+    await ConversaRepository.upsert(
+      telefone,
+      cliente.id,
+      ETAPAS.AGUARDANDO_REFERENCIA,
+      { origem }
+    );
+  }
+
+  /**
+   * ========================================
+   * ETAPA: AGUARDANDO REFERÊNCIA
+   * Cliente informa ponto de referência
+   * ========================================
+   */
+  async etapaAguardandoReferencia(msg, cliente, conversa, texto, intencao, anteriores) {
+    const telefone = msg.from.replace('@c.us', '').replace('@s.whatsapp.net', '');
+    const dados = conversa.dados || {};
+    const AtribuicaoService = require('../services/atribuicao');
+
+    await delayResposta();
+
+    // Verificar se tem referência ou se cliente disse que não tem
+    let referencia = null;
+    const semReferencia = texto.toLowerCase().match(/^(não|nao|n|nenhum|nenhuma|nada|sem|pular|nn|nope|no)$/i);
+    
+    if (!semReferencia && texto.length > 2) {
+      referencia = texto.trim();
+      console.log('📍 Referência recebida:', referencia);
+    } else {
+      console.log('📍 Cliente sem referência');
+    }
+
+    // Atualizar origem com referência
+    const origem = {
+      ...dados.origem,
+      referencia: referencia
+    };
+
+    // Agora buscar motorista
+    await delayConfirmacao();
+
+    const respBusca = await OpenAIService.gerarResposta('BUSCANDO_MOTORISTA', {}, anteriores);
+    await this.responder(msg, respBusca || 'Só um instante que vou verificar o motorista mais próximo...');
+
+    await delayBuscaMotorista();
+
+    // Buscar motorista mais próximo
+    const motorista = await AtribuicaoService.buscarMotoristaProximo(origem.latitude, origem.longitude);
+
+    if (!motorista) {
+      const respSem = await OpenAIService.gerarResposta('SEM_MOTORISTA', {}, anteriores);
+      await this.responder(msg, respSem || 'Poxa, não encontrei motorista disponível agora. Tenta de novo em alguns minutos?');
+      await ConversaRepository.resetar(telefone);
+      this.limparHistorico(telefone);
+      return;
+    }
+
+    // Calcular tempo estimado
+    const tempoMin = motorista.tempo_estimado_min || Math.floor(Math.random() * 5) + 3;
+
+    // Perguntar se pode mandar
+    const msgPergunta = 'Encontrei um motorista a ' + tempoMin + ' minutos de você.\n\nPosso mandar?';
+    await this.responder(msg, msgPergunta);
+
+    // Salvar dados COM referência
+    await ConversaRepository.upsert(
+      telefone,
+      cliente.id,
+      ETAPAS.CONFIRMANDO,
+      { 
+        origem,
+        referencia: referencia,
+        motorista_id: motorista.id,
+        motorista_nome: motorista.nome,
+        motorista_veiculo: motorista.veiculo_modelo,
+        motorista_cor: motorista.veiculo_cor,
+        motorista_placa: motorista.veiculo_placa,
+        motorista_telefone: motorista.telefone,
+        tempo_estimado: tempoMin
+      }
+    );
+  }
+  /**
+   * ========================================
+   * ETAPA: CONFIRMANDO SE PODE MANDAR MOTORISTA
+   * Cliente responde "sim" ou "não"
+   * ========================================
+   */
+  async etapaConfirmandoMotorista(msg, cliente, conversa, texto, intencao, anteriores) {
+    const telefone = msg.from.replace('@c.us', '').replace('@s.whatsapp.net', '');
+    const dados = conversa.dados || {};
+
+    await delayResposta();
+
+    // Se CONFIRMOU (sim, ok, pode, manda, etc)
+    if (intencao === INTENCOES.CONFIRMACAO || 
+        texto.toLowerCase().match(/^(sim|s|ok|isso|pode|manda|bora|vai|quero|beleza|pode ser|pode mandar|manda sim|sim pode|certo|correto|isso mesmo|é isso|tá certo|ta certo|confirmo|confirmado)$/i)) {
+      
+      // Buscar valor configurado no painel ADM
+      const valorCorrida = await ConfiguracaoRepository.getValorCorrida();
+
+      // Agora sim, criar a corrida e atribuir o motorista
+      const corrida = await CorridaRepository.criar({
+        cliente_id: cliente.id,
+        motorista_id: dados.motorista_id,
+        origem_endereco: dados.origem?.endereco,
+        origem_latitude: dados.origem?.latitude,
+        origem_longitude: dados.origem?.longitude,
+        origem_referencia: dados.referencia || dados.origem?.referencia,
+        valor: valorCorrida,
+        status: 'aceita'
+      });
+
+      // Marcar motorista como em corrida
+      await MotoristaRepository.iniciarCorrida(dados.motorista_id);
+      await ClienteRepository.incrementarCorridas(cliente.id);
+
+      // Link de rastreamento (URL relativa - funciona em qualquer domínio)
+      const baseUrl = process.env.BASE_URL || 'http://localhost:3000';
+      const linkRastreamento = `${baseUrl}/rastrear/${corrida.id}`;
+
+      // ========================================
+      // NOTIFICAR MOTORISTA VIA WEBSOCKET
+      // ========================================
+      try {
+        const io = global.io; // Socket.io global
+        if (io) {
+          io.to(`motorista_${dados.motorista_id}`).emit('nova-corrida', {
+            corrida_id: corrida.id,
+            cliente_telefone: telefone,
+            origem: dados.origem.endereco,
+            origem_lat: dados.origem.latitude,
+            origem_lng: dados.origem.longitude,
+            valor: 13.00,
+            tempo_estimado: dados.tempo_estimado,
+          });
+          console.log(`📱 Notificação enviada para motorista ${dados.motorista_id}`);
+        }
+      } catch (wsError) {
+        console.error('Erro ao notificar motorista:', wsError);
+      }
+
+      // ========================================
+      // MENSAGEM FINAL: CERTINHO + DADOS + LINK
+      // ========================================
+      const msgFinal = `Certinho, está a caminho! 🚗
+
+👤 Nome: ${dados.motorista_nome}
+🚙 Veículo: ${dados.motorista_veiculo} ${dados.motorista_cor}
+📍 Placa: ${dados.motorista_placa}
+⏱️ Tempo estimado: ${dados.tempo_estimado} minutos
+
+Acompanhe a localização em tempo real:
+${linkRastreamento}`;
+
+      await this.responder(msg, msgFinal);
+
+      await ConversaRepository.upsert(
+        telefone,
+        cliente.id,
+        ETAPAS.EM_CORRIDA,
+        dados,
+        corrida.id
+      );
+      return;
+    }
+
+    // Se NEGOU (não, cancela, etc)
+    if (intencao === INTENCOES.NEGACAO || 
+        texto.toLowerCase().match(/^(não|nao|n|cancela|deixa|agora não|agora nao|depois|errado|outro|outra|diferente|mudou|muda|trocar|troca)$/i)) {
+      
+      const resposta = await OpenAIService.gerarResposta('CORRIDA_CANCELADA', {}, anteriores);
+      await this.responder(msg, resposta || 'Sem problema! Se precisar, é só chamar.');
+      await ConversaRepository.resetar(telefone);
+      this.limparHistorico(telefone);
+      return;
+    }
+
+    // Não entendeu - perguntar de novo
+    await this.responder(msg, 'Posso mandar o motorista? Responde "sim" ou "não".');
+  }
+
+  /**
+   * Em corrida
+   */
+  async etapaEmCorrida(msg, conversa, texto, intencao, anteriores) {
+    await delayResposta();
+
+    const resposta = await OpenAIService.gerarResposta('AGUARDANDO_MOTORISTA', {}, anteriores);
+    await this.responder(msg, resposta || 'Seu motorista já está a caminho.');
+  }
+
+  /**
+   * Responder valor - BUSCA DO PAINEL ADM
+   */
+  async responderValor(msg, conversa, anteriores) {
+    await delayResposta();
+
+    // Buscar valor configurado no painel ADM
+    let valor = await ConfiguracaoRepository.getValorCorrida();
+    
+    // Se tiver corrida em andamento, usa o valor dela
+    if (conversa.corrida_atual_id) {
+      const corrida = await CorridaRepository.buscarPorId(conversa.corrida_atual_id);
+      if (corrida?.valor) {
+        valor = corrida.valor;
+      }
+    }
+
+    const resposta = await OpenAIService.gerarResposta('VALOR_CORRIDA', { 
+      valor: valor.toFixed(2).replace('.', ',') 
+    }, anteriores);
+    
+    await this.responder(msg, resposta || `O valor é R$ ${valor.toFixed(2).replace('.', ',')}, conforme definido pela frota.`);
+  }
+
+  /**
+   * Responder sem desconto
+   */
+  async responderSemDesconto(msg, anteriores) {
+    await delayResposta();
+
+    const resposta = await OpenAIService.gerarResposta('SEM_DESCONTO', {}, anteriores);
+    await this.responder(msg, resposta || 'Esse valor é o que está configurado no sistema no momento.');
+  }
+
+  /**
+   * Responder aguardando
+   */
+  async responderAguardando(msg, anteriores) {
+    await delayResposta();
+
+    const resposta = await OpenAIService.gerarResposta('AGUARDANDO_MOTORISTA', {}, anteriores);
+    await this.responder(msg, resposta || 'Estou verificando, só um instante.');
+  }
+
+  /**
+   * Cancelamento
+   */
+  async processarCancelamento(msg, conversa, anteriores) {
+    const telefone = msg.from.replace('@c.us', '').replace('@s.whatsapp.net', '');
+
+    if (conversa.corrida_atual_id) {
+      const corrida = await CorridaRepository.buscarPorId(conversa.corrida_atual_id);
+      
+      if (corrida && ['aguardando', 'enviada', 'aceita'].includes(corrida.status)) {
+        await CorridaRepository.cancelar(corrida.id, 'Cancelado pelo cliente');
+        
+        if (corrida.motorista_id) {
+          await MotoristaRepository.finalizarCorrida(corrida.motorista_id);
+        }
+      }
+    }
+
+    await delayResposta();
+
+    const resposta = await OpenAIService.gerarResposta('CORRIDA_CANCELADA', {}, anteriores);
+    await this.responder(msg, resposta || 'Corrida cancelada. Se precisar de outra, é só chamar.');
+
+    await ConversaRepository.resetar(telefone);
+    this.limparHistorico(telefone);
+  }
+
+  /**
+   * Finalizar corrida (chamado externamente)
+   */
+  async finalizarCorrida(corridaId) {
+    const corrida = await CorridaRepository.buscarPorId(corridaId);
+    if (!corrida) return;
+
+    await CorridaRepository.finalizar(corridaId);
+    
+    if (corrida.motorista_id) {
+      await MotoristaRepository.finalizarCorrida(corrida.motorista_id);
+    }
+
+    const telefoneCliente = corrida.cliente_telefone + '@c.us';
+    const anteriores = this.getMensagensAnteriores(corrida.cliente_telefone);
+    
+    const resposta = await OpenAIService.gerarResposta('CORRIDA_FINALIZADA', {}, anteriores);
+    await this.whatsapp.enviarMensagem(telefoneCliente, resposta || 'Corrida finalizada! Obrigada 👍');
+
+    await MensagemRepository.registrarSaida(corrida.cliente_telefone, resposta);
+
+    await ConversaRepository.resetar(corrida.cliente_telefone);
+    this.limparHistorico(corrida.cliente_telefone);
+  }
+
+  /**
+   * ========================================
+   * GEOCODIFICAR ENDEREÇO
+   * Converte endereço digitado em coordenadas
+   * ========================================
+   */
+  async geocodificarEndereco(msg, enderecoDigitado, anteriores, empresaId = 1) {
+    const telefone = msg.from.replace('@c.us', '').replace('@s.whatsapp.net', '');
+
+    try {
+      // Buscar cidade da empresa para melhorar precisão do geocoding
+      const cidadeEmpresa = await EmpresaRepository.getCidade(empresaId);
+      console.log(`🏙️ Cidade da empresa: ${cidadeEmpresa || 'não definida'}`);
+      
+      // Tentar geocodificar com a cidade da empresa
+      const geo = await GeocodingService.geocodificar(enderecoDigitado, cidadeEmpresa);
+
+      if (geo && geo.latitude && geo.longitude) {
+        console.log(`✅ Endereço geocodificado: ${geo.enderecoFormatado}`);
+        
+        return {
+          latitude: geo.latitude,
+          longitude: geo.longitude,
+          endereco: geo.enderecoFormatado || enderecoDigitado,
+          bairro: geo.bairro,
+          cidade: geo.cidade,
+        };
+      } else {
+        // Não encontrou - pedir localização
+        console.log(`❌ Geocoding falhou para: "${enderecoDigitado}"`);
+        
+        await delayResposta();
+        const respNaoEncontrei = await OpenAIService.gerarResposta('ENDERECO_NAO_ENCONTRADO', {}, anteriores);
+        await this.responder(msg, respNaoEncontrei || 'Não consegui encontrar esse endereço 😕 Pode enviar a localização pelo WhatsApp?');
+        
+        return null;
+      }
+    } catch (error) {
+      console.error('❌ Erro no geocoding:', error);
+      
+      // Em caso de erro, pedir localização
+      await delayResposta();
+      await this.responder(msg, 'Tive um probleminha pra encontrar o endereço. Pode mandar a localização pelo WhatsApp? 📍');
+      
+      return null;
+    }
+  }
+
+  /**
+   * Envia resposta
+   */
+  async responder(msg, texto) {
+    const telefone = msg.from.replace('@c.us', '').replace('@s.whatsapp.net', '');
+
+    console.log(`📤 Enviando para ${telefone}: ${texto}`);
+
+    await this.whatsapp.enviarMensagem(msg.from, texto);
+    await MensagemRepository.registrarSaida(telefone, texto);
+
+    // Guardar no histórico para não repetir
+    this.addMensagemEnviada(telefone, texto);
+  }
+}
+
+module.exports = FluxoConversa;

@@ -1,0 +1,1021 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard Master - Visão Geral de Todas as Frotas</title>
+  
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <!-- Socket.io -->
+  <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+  
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    :root {
+      --primary: #6366f1;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --bg: #0f172a;
+      --card: #1e293b;
+      --card-hover: #334155;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --border: #334155;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+    
+    /* Header */
+    .header {
+      background: linear-gradient(135deg, #1e1b4b, #312e81);
+      border-bottom: 1px solid var(--border);
+      padding: 20px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    
+    .logo {
+      font-size: 24px;
+      font-weight: 700;
+      color: white;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    
+    .logo-badge {
+      background: var(--warning);
+      color: #000;
+      font-size: 10px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-weight: 700;
+    }
+    
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    
+    .status-conexao {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      color: rgba(255,255,255,0.8);
+    }
+    
+    .status-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--danger);
+    }
+    
+    .status-dot.conectado {
+      background: var(--success);
+      animation: pulse 2s infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    
+    /* Métricas gerais */
+    .metricas-gerais {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      padding: 24px;
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+    }
+    
+    .metrica-geral {
+      text-align: center;
+      padding: 16px;
+      background: var(--bg);
+      border-radius: 12px;
+    }
+    
+    .metrica-geral-valor {
+      font-size: 36px;
+      font-weight: 700;
+    }
+    
+    .metrica-geral-label {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+    
+    .metrica-geral.empresas .metrica-geral-valor { color: var(--primary); }
+    .metrica-geral.online .metrica-geral-valor { color: var(--success); }
+    .metrica-geral.corridas .metrica-geral-valor { color: var(--warning); }
+    .metrica-geral.faturamento .metrica-geral-valor { color: #10b981; }
+    
+    /* Container principal */
+    .main-container {
+      display: grid;
+      grid-template-columns: 350px 1fr;
+      height: calc(100vh - 200px);
+    }
+    
+    /* Lista de empresas */
+    .empresas-lista {
+      background: var(--card);
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+    }
+    
+    .empresas-header {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: var(--card);
+      z-index: 10;
+    }
+    
+    .empresas-header h2 {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+    
+    .search-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    
+    .search-box input {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--text);
+      font-size: 14px;
+      outline: none;
+    }
+    
+    .empresa-item {
+      padding: 16px;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .empresa-item:hover {
+      background: var(--card-hover);
+    }
+    
+    .empresa-item.selected {
+      background: rgba(99, 102, 241, 0.2);
+      border-left: 4px solid var(--primary);
+    }
+    
+    .empresa-nome {
+      font-weight: 600;
+      font-size: 15px;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .empresa-status {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--success);
+    }
+    
+    .empresa-status.inativo { background: var(--danger); }
+    
+    .empresa-metricas {
+      display: flex;
+      gap: 16px;
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    
+    .empresa-metrica {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    
+    .empresa-metrica.online { color: var(--success); }
+    .empresa-metrica.corridas { color: var(--warning); }
+    
+    /* Área de detalhes */
+    .empresa-detalhes {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      overflow: hidden;
+    }
+    
+    .detalhes-header {
+      padding: 20px 24px;
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .detalhes-titulo {
+      font-size: 20px;
+      font-weight: 600;
+    }
+    
+    .detalhes-acoes {
+      display: flex;
+      gap: 12px;
+    }
+    
+    .btn {
+      padding: 10px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+    }
+    
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+    }
+    
+    .btn-outline {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    
+    .btn:hover { opacity: 0.8; }
+    
+    /* Grid de conteúdo */
+    .detalhes-conteudo {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0;
+      overflow: hidden;
+    }
+    
+    /* Mapa */
+    .mapa-container {
+      position: relative;
+      border-right: 1px solid var(--border);
+    }
+    
+    #mapa {
+      width: 100%;
+      height: 100%;
+    }
+    
+    .mapa-metricas {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      z-index: 1000;
+      display: flex;
+      gap: 10px;
+    }
+    
+    .mapa-metrica {
+      background: rgba(30, 41, 59, 0.95);
+      backdrop-filter: blur(10px);
+      padding: 12px 16px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+    }
+    
+    .mapa-metrica-valor {
+      font-size: 24px;
+      font-weight: 700;
+    }
+    
+    .mapa-metrica-label {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+    
+    /* Painel lateral de detalhes */
+    .painel-detalhes {
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      background: var(--card);
+    }
+    
+    .tab {
+      flex: 1;
+      padding: 14px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    
+    .tab:hover { background: rgba(99, 102, 241, 0.1); }
+    .tab.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+      background: rgba(99, 102, 241, 0.1);
+    }
+    
+    .tab-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      background: var(--bg);
+    }
+    
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+    
+    /* Cards de dados */
+    .card-lista {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    
+    .card-item {
+      background: var(--card);
+      border-radius: 10px;
+      padding: 14px;
+      border-left: 3px solid var(--primary);
+    }
+    
+    .card-item.warning { border-left-color: var(--warning); }
+    .card-item.success { border-left-color: var(--success); }
+    .card-item.danger { border-left-color: var(--danger); }
+    
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    
+    .card-titulo {
+      font-weight: 600;
+      font-size: 14px;
+    }
+    
+    .card-badge {
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    
+    .card-badge.online { background: rgba(16, 185, 129, 0.2); color: var(--success); }
+    .card-badge.offline { background: rgba(239, 68, 68, 0.2); color: var(--danger); }
+    .card-badge.pendente { background: rgba(245, 158, 11, 0.2); color: var(--warning); }
+    
+    .card-info {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    
+    /* Sem seleção */
+    .sem-selecao {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      text-align: center;
+      padding: 40px;
+      color: var(--text-muted);
+    }
+    
+    .sem-selecao-icon {
+      font-size: 64px;
+      margin-bottom: 16px;
+    }
+    
+    .sem-selecao h3 {
+      font-size: 18px;
+      margin-bottom: 8px;
+      color: var(--text);
+    }
+    
+    /* Marcadores do mapa */
+    .marcador-motorista {
+      background: var(--success);
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+      border: 3px solid white;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+    
+    .marcador-motorista.ocupado { background: var(--warning); }
+    .marcador-motorista.offline { background: var(--text-muted); }
+    
+    /* Responsivo */
+    @media (max-width: 1200px) {
+      .main-container {
+        grid-template-columns: 1fr;
+      }
+      
+      .empresas-lista {
+        display: none;
+      }
+      
+      .detalhes-conteudo {
+        grid-template-columns: 1fr;
+        grid-template-rows: 50vh 1fr;
+      }
+      
+      .mapa-container {
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="header-left">
+      <div class="logo">
+        🚀 REBECA
+        <span class="logo-badge">MASTER</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="status-conexao">
+        <div class="status-dot" id="status-dot"></div>
+        <span id="status-texto">Conectando...</span>
+      </div>
+      <span style="font-size: 13px; color: rgba(255,255,255,0.6);" id="ultima-atualizacao">--:--:--</span>
+    </div>
+  </header>
+  
+  <!-- Métricas gerais -->
+  <div class="metricas-gerais">
+    <div class="metrica-geral empresas">
+      <div class="metrica-geral-valor" id="total-empresas">0</div>
+      <div class="metrica-geral-label">Empresas Ativas</div>
+    </div>
+    <div class="metrica-geral online">
+      <div class="metrica-geral-valor" id="total-motoristas">0</div>
+      <div class="metrica-geral-label">Motoristas Online</div>
+    </div>
+    <div class="metrica-geral corridas">
+      <div class="metrica-geral-valor" id="total-corridas">0</div>
+      <div class="metrica-geral-label">Corridas Hoje</div>
+    </div>
+    <div class="metrica-geral faturamento">
+      <div class="metrica-geral-valor" id="total-faturamento">R$ 0</div>
+      <div class="metrica-geral-label">Faturamento Hoje</div>
+    </div>
+  </div>
+  
+  <!-- Container principal -->
+  <div class="main-container">
+    <!-- Lista de empresas -->
+    <div class="empresas-lista">
+      <div class="empresas-header">
+        <h2>🏢 Empresas</h2>
+        <div class="search-box">
+          <span>🔍</span>
+          <input type="text" placeholder="Buscar empresa..." id="busca-empresa" oninput="filtrarEmpresas()">
+        </div>
+      </div>
+      <div id="lista-empresas">
+        <!-- Empresas serão renderizadas aqui -->
+      </div>
+    </div>
+    
+    <!-- Detalhes da empresa selecionada -->
+    <div class="empresa-detalhes" id="area-detalhes">
+      <div class="sem-selecao">
+        <div class="sem-selecao-icon">🏢</div>
+        <h3>Selecione uma empresa</h3>
+        <p>Clique em uma empresa na lista para ver os detalhes em tempo real</p>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Template dos detalhes -->
+  <template id="template-detalhes">
+    <div class="detalhes-header">
+      <div class="detalhes-titulo" id="empresa-selecionada-nome">Nome da Empresa</div>
+      <div class="detalhes-acoes">
+        <button class="btn btn-outline" onclick="abrirPainelADM()">📊 Painel ADM</button>
+        <button class="btn btn-primary" onclick="atualizarEmpresaSelecionada()">🔄 Atualizar</button>
+      </div>
+    </div>
+    
+    <div class="detalhes-conteudo">
+      <!-- Mapa -->
+      <div class="mapa-container">
+        <div id="mapa-empresa"></div>
+        <div class="mapa-metricas">
+          <div class="mapa-metrica">
+            <div class="mapa-metrica-valor" id="emp-online">0</div>
+            <div class="mapa-metrica-label">Online</div>
+          </div>
+          <div class="mapa-metrica">
+            <div class="mapa-metrica-valor" id="emp-corridas">0</div>
+            <div class="mapa-metrica-label">Corridas</div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Painel de detalhes -->
+      <div class="painel-detalhes">
+        <div class="tabs">
+          <div class="tab active" data-tab="motoristas">👤 Motoristas</div>
+          <div class="tab" data-tab="corridas">🚗 Corridas</div>
+          <div class="tab" data-tab="alertas">⚠️ Alertas</div>
+        </div>
+        
+        <div class="tab-content">
+          <div class="tab-panel active" id="panel-motoristas">
+            <div class="card-lista" id="lista-motoristas-emp"></div>
+          </div>
+          <div class="tab-panel" id="panel-corridas">
+            <div class="card-lista" id="lista-corridas-emp"></div>
+          </div>
+          <div class="tab-panel" id="panel-alertas">
+            <div class="card-lista" id="lista-alertas-emp"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </template>
+  
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  
+  <script>
+    // ==========================================
+    // CONFIGURAÇÃO
+    // ==========================================
+    const CONFIG = {
+      intervalo_atualizacao: 5000,
+      centro_mapa: [-22.3285, -49.0715],
+      zoom_padrao: 12
+    };
+    
+    // Estado global
+    let socket = null;
+    let empresas = [];
+    let empresaSelecionada = null;
+    let mapaEmpresa = null;
+    let marcadores = {};
+    
+    // ==========================================
+    // INICIALIZAÇÃO
+    // ==========================================
+    document.addEventListener('DOMContentLoaded', async () => {
+      await carregarDadosIniciais();
+      conectarWebSocket();
+      iniciarAtualizacaoAutomatica();
+    });
+    
+    // ==========================================
+    // WEBSOCKET
+    // ==========================================
+    function conectarWebSocket() {
+      const wsUrl = window.location.origin;
+      socket = io(wsUrl, {
+        transports: ['websocket', 'polling']
+      });
+      
+      socket.on('connect', () => {
+        console.log('✅ WebSocket Master conectado');
+        atualizarStatusConexao(true);
+        
+        // Entrar na sala master
+        socket.emit('entrar:master', {});
+      });
+      
+      socket.on('disconnect', () => {
+        console.log('❌ WebSocket desconectado');
+        atualizarStatusConexao(false);
+      });
+      
+      // Eventos de todas as empresas (MASTER vê tudo)
+      socket.on('empresa:atualizada', (data) => {
+        atualizarEmpresaNaLista(data);
+      });
+      
+      socket.on('motorista:localizacao', (data) => {
+        if (empresaSelecionada && data.empresa_id == empresaSelecionada.id) {
+          atualizarMarcador(data);
+        }
+        atualizarMetricasGerais();
+      });
+      
+      socket.on('corrida:nova', (data) => {
+        if (empresaSelecionada && data.empresa_id == empresaSelecionada.id) {
+          carregarCorridasEmpresa(empresaSelecionada.id);
+        }
+        atualizarMetricasGerais();
+      });
+    }
+    
+    function atualizarStatusConexao(conectado) {
+      const dot = document.getElementById('status-dot');
+      const texto = document.getElementById('status-texto');
+      
+      if (conectado) {
+        dot.classList.add('conectado');
+        texto.textContent = 'Conectado';
+      } else {
+        dot.classList.remove('conectado');
+        texto.textContent = 'Desconectado';
+      }
+    }
+    
+    // ==========================================
+    // CARREGAR DADOS
+    // ==========================================
+    async function carregarDadosIniciais() {
+      try {
+        // Carregar lista de empresas
+        const res = await fetch('/api/master/empresas');
+        const data = await res.json();
+        
+        if (data.success || data.empresas) {
+          empresas = data.empresas || data;
+          renderizarEmpresas();
+        }
+        
+        // Carregar métricas gerais
+        await carregarMetricasGerais();
+        
+      } catch (error) {
+        console.error('Erro ao carregar dados:', error);
+      }
+    }
+    
+    async function carregarMetricasGerais() {
+      try {
+        const res = await fetch('/api/master/dashboard');
+        const data = await res.json();
+        
+        if (data.success || data.total_empresas !== undefined) {
+          document.getElementById('total-empresas').textContent = data.total_empresas || empresas.length;
+          document.getElementById('total-motoristas').textContent = data.total_motoristas_online || 0;
+          document.getElementById('total-corridas').textContent = data.total_corridas_hoje || 0;
+          document.getElementById('total-faturamento').textContent = `R$ ${(data.total_faturamento_hoje || 0).toFixed(0)}`;
+        }
+      } catch (error) {
+        console.error('Erro métricas gerais:', error);
+      }
+      
+      document.getElementById('ultima-atualizacao').textContent = new Date().toLocaleTimeString('pt-BR');
+    }
+    
+    // ==========================================
+    // RENDERIZAÇÃO
+    // ==========================================
+    function renderizarEmpresas() {
+      const lista = document.getElementById('lista-empresas');
+      const busca = document.getElementById('busca-empresa').value.toLowerCase();
+      
+      const filtradas = empresas.filter(e => 
+        e.nome?.toLowerCase().includes(busca) || 
+        e.cidade?.toLowerCase().includes(busca)
+      );
+      
+      if (filtradas.length === 0) {
+        lista.innerHTML = `
+          <div style="padding: 40px; text-align: center; color: var(--text-muted);">
+            Nenhuma empresa encontrada
+          </div>
+        `;
+        return;
+      }
+      
+      lista.innerHTML = filtradas.map(e => `
+        <div class="empresa-item ${empresaSelecionada?.id === e.id ? 'selected' : ''}" 
+             onclick="selecionarEmpresa(${e.id})">
+          <div class="empresa-nome">
+            ${e.nome || 'Sem nome'}
+            <div class="empresa-status ${e.ativo ? '' : 'inativo'}"></div>
+          </div>
+          <div class="empresa-metricas">
+            <div class="empresa-metrica online">
+              👤 ${e.motoristas_online || 0}
+            </div>
+            <div class="empresa-metrica corridas">
+              🚗 ${e.corridas_hoje || 0}
+            </div>
+            <div class="empresa-metrica">
+              📍 ${e.cidade || 'N/A'}
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+    
+    function filtrarEmpresas() {
+      renderizarEmpresas();
+    }
+    
+    // ==========================================
+    // SELECIONAR EMPRESA
+    // ==========================================
+    async function selecionarEmpresa(id) {
+      empresaSelecionada = empresas.find(e => e.id === id);
+      
+      if (!empresaSelecionada) return;
+      
+      // Atualizar seleção visual
+      renderizarEmpresas();
+      
+      // Renderizar template de detalhes
+      const area = document.getElementById('area-detalhes');
+      const template = document.getElementById('template-detalhes');
+      area.innerHTML = template.innerHTML;
+      
+      // Inicializar tabs
+      inicializarTabs();
+      
+      // Atualizar título
+      document.getElementById('empresa-selecionada-nome').textContent = empresaSelecionada.nome;
+      
+      // Inicializar mapa
+      setTimeout(() => {
+        inicializarMapaEmpresa();
+      }, 100);
+      
+      // Carregar dados da empresa
+      await carregarDadosEmpresa();
+    }
+    
+    function inicializarTabs() {
+      document.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+          document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+          
+          tab.classList.add('active');
+          document.getElementById(`panel-${tab.dataset.tab}`).classList.add('active');
+        });
+      });
+    }
+    
+    function inicializarMapaEmpresa() {
+      const container = document.getElementById('mapa-empresa');
+      if (!container) return;
+      
+      // Destruir mapa anterior se existir
+      if (mapaEmpresa) {
+        mapaEmpresa.remove();
+      }
+      
+      mapaEmpresa = L.map('mapa-empresa', {
+        zoomControl: true,
+        attributionControl: false
+      }).setView(CONFIG.centro_mapa, CONFIG.zoom_padrao);
+      
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19
+      }).addTo(mapaEmpresa);
+      
+      marcadores = {};
+    }
+    
+    async function carregarDadosEmpresa() {
+      if (!empresaSelecionada) return;
+      
+      try {
+        // Carregar motoristas
+        const resMotoristas = await fetch(`/api/admin/motoristas?empresa_id=${empresaSelecionada.id}`);
+        const dataMotoristas = await resMotoristas.json();
+        
+        if (dataMotoristas.success || dataMotoristas.motoristas) {
+          const motoristas = dataMotoristas.motoristas || dataMotoristas;
+          renderizarMotoristasEmpresa(motoristas);
+          atualizarMarcadoresMotoristas(motoristas);
+          
+          const online = motoristas.filter(m => m.status === 'online').length;
+          document.getElementById('emp-online').textContent = online;
+        }
+        
+        // Carregar corridas
+        await carregarCorridasEmpresa(empresaSelecionada.id);
+        
+      } catch (error) {
+        console.error('Erro ao carregar dados da empresa:', error);
+      }
+    }
+    
+    async function carregarCorridasEmpresa(empresaId) {
+      try {
+        const res = await fetch(`/api/admin/corridas/hoje?empresa_id=${empresaId}`);
+        const data = await res.json();
+        
+        if (data.success || data.corridas) {
+          const corridas = data.corridas || data;
+          renderizarCorridasEmpresa(corridas);
+          
+          const ativas = corridas.filter(c => 
+            ['pendente', 'aceita', 'a_caminho', 'em_andamento'].includes(c.status)
+          ).length;
+          document.getElementById('emp-corridas').textContent = ativas;
+        }
+      } catch (error) {
+        console.error('Erro corridas:', error);
+      }
+    }
+    
+    function renderizarMotoristasEmpresa(motoristas) {
+      const lista = document.getElementById('lista-motoristas-emp');
+      
+      if (!motoristas || motoristas.length === 0) {
+        lista.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-muted);">Nenhum motorista</div>';
+        return;
+      }
+      
+      lista.innerHTML = motoristas.map(m => {
+        const statusClass = m.status === 'online' ? 'online' : 'offline';
+        return `
+          <div class="card-item ${m.status === 'online' ? 'success' : ''}">
+            <div class="card-header">
+              <span class="card-titulo">${m.nome || 'Sem nome'}</span>
+              <span class="card-badge ${statusClass}">${m.status || 'offline'}</span>
+            </div>
+            <div class="card-info">
+              🚗 ${m.veiculo_modelo || ''} ${m.veiculo_cor || ''} • ${m.veiculo_placa || ''}<br>
+              📱 ${m.telefone || 'N/A'}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+    
+    function renderizarCorridasEmpresa(corridas) {
+      const lista = document.getElementById('lista-corridas-emp');
+      
+      const ativas = corridas.filter(c => 
+        ['pendente', 'aceita', 'a_caminho', 'aguardando_cliente', 'em_andamento'].includes(c.status)
+      );
+      
+      if (!ativas || ativas.length === 0) {
+        lista.innerHTML = '<div style="text-align: center; padding: 20px; color: var(--text-muted);">Nenhuma corrida ativa</div>';
+        return;
+      }
+      
+      lista.innerHTML = ativas.map(c => {
+        const statusClass = c.status === 'pendente' ? 'warning' : (c.status === 'em_andamento' ? 'success' : '');
+        return `
+          <div class="card-item ${statusClass}">
+            <div class="card-header">
+              <span class="card-titulo">#${c.id}</span>
+              <span class="card-badge pendente">${c.status}</span>
+            </div>
+            <div class="card-info">
+              📍 ${c.origem_endereco?.substring(0, 40) || 'N/A'}...<br>
+              👤 ${c.nome_cliente || c.telefone_cliente || 'Cliente'}<br>
+              💰 R$ ${(c.valor || 0).toFixed(2)}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+    
+    function atualizarMarcadoresMotoristas(motoristas) {
+      if (!mapaEmpresa) return;
+      
+      // Limpar marcadores antigos
+      Object.values(marcadores).forEach(m => mapaEmpresa.removeLayer(m));
+      marcadores = {};
+      
+      motoristas.forEach(m => {
+        if (m.latitude && m.longitude) {
+          const statusClass = m.status === 'online' ? (m.disponivel ? '' : 'ocupado') : 'offline';
+          
+          const icone = L.divIcon({
+            className: 'marcador-container',
+            html: `<div class="marcador-motorista ${statusClass}">🚗</div>`,
+            iconSize: [32, 32],
+            iconAnchor: [16, 16]
+          });
+          
+          marcadores[m.id] = L.marker([m.latitude, m.longitude], { icon: icone })
+            .addTo(mapaEmpresa)
+            .bindPopup(`<b>${m.nome || 'Motorista'}</b><br>${m.veiculo_modelo || ''}`);
+        }
+      });
+      
+      // Ajustar zoom para mostrar todos os motoristas
+      const pontos = motoristas.filter(m => m.latitude && m.longitude)
+        .map(m => [m.latitude, m.longitude]);
+      
+      if (pontos.length > 0) {
+        mapaEmpresa.fitBounds(pontos, { padding: [50, 50] });
+      }
+    }
+    
+    function atualizarMarcador(data) {
+      if (!mapaEmpresa) return;
+      
+      const statusClass = data.status === 'online' ? (data.disponivel ? '' : 'ocupado') : 'offline';
+      
+      const icone = L.divIcon({
+        className: 'marcador-container',
+        html: `<div class="marcador-motorista ${statusClass}">🚗</div>`,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16]
+      });
+      
+      if (marcadores[data.motorista_id]) {
+        marcadores[data.motorista_id].setLatLng([data.lat, data.lng]);
+        marcadores[data.motorista_id].setIcon(icone);
+      } else {
+        marcadores[data.motorista_id] = L.marker([data.lat, data.lng], { icon: icone })
+          .addTo(mapaEmpresa)
+          .bindPopup(`<b>${data.nome || 'Motorista'}</b>`);
+      }
+    }
+    
+    // ==========================================
+    // AÇÕES
+    // ==========================================
+    function abrirPainelADM() {
+      if (empresaSelecionada) {
+        window.open(`/admin/dashboard-tempo-real.html?empresa_id=${empresaSelecionada.id}`, '_blank');
+      }
+    }
+    
+    async function atualizarEmpresaSelecionada() {
+      if (empresaSelecionada) {
+        await carregarDadosEmpresa();
+      }
+    }
+    
+    function atualizarEmpresaNaLista(data) {
+      const index = empresas.findIndex(e => e.id === data.id);
+      if (index >= 0) {
+        empresas[index] = { ...empresas[index], ...data };
+        renderizarEmpresas();
+      }
+    }
+    
+    async function atualizarMetricasGerais() {
+      await carregarMetricasGerais();
+    }
+    
+    // ==========================================
+    // ATUALIZAÇÃO AUTOMÁTICA
+    // ==========================================
+    function iniciarAtualizacaoAutomatica() {
+      setInterval(async () => {
+        await carregarMetricasGerais();
+        
+        if (empresaSelecionada) {
+          await carregarDadosEmpresa();
+        }
+      }, CONFIG.intervalo_atualizacao);
+    }
+  </script>
+</body>
+</html>

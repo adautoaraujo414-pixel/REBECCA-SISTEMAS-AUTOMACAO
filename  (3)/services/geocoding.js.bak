@@ -1,0 +1,425 @@
+// ========================================
+// REBECA - SERVIÇO DE GEOCODING
+// VERSÃO ULTRA PRECISA
+// Converte endereço → coordenadas (lat/lng)
+// Usa Nominatim (OpenStreetMap) - GRATUITO
+// ========================================
+
+const https = require('https');
+const http = require('http');
+
+const GeocodingService = {
+
+  // Configurações
+  cidadePadrao: process.env.CIDADE_PADRAO || 'Guaiçara, SP',
+  estadoPadrao: process.env.ESTADO_PADRAO || 'São Paulo',
+  paisPadrao: 'Brazil',
+  
+  // Timeout e retry
+  TIMEOUT_MS: 15000,
+  MAX_TENTATIVAS: 3,
+  DELAY_ENTRE_TENTATIVAS: 1000,
+
+  /**
+   * Converte endereço em coordenadas (VERSÃO ULTRA PRECISA)
+   * Múltiplas tentativas e variações
+   */
+  async geocodificar(endereco) {
+    try {
+      if (!endereco || endereco.length < 3) {
+        console.log('⚠️ Endereço muito curto para geocodificar');
+        return null;
+      }
+
+      console.log(`\n🌍 === GEOCODING ULTRA PRECISO ===`);
+      console.log(`📝 Entrada: "${endereco}"`);
+
+      // Limpar e preparar endereço
+      let enderecoLimpo = this.limparEndereco(endereco);
+      console.log(`🧹 Limpo: "${enderecoLimpo}"`);
+      
+      // Se não tem cidade, adicionar cidade padrão
+      const temCidade = this.temCidade(enderecoLimpo);
+      if (!temCidade) {
+        enderecoLimpo = `${enderecoLimpo}, ${this.cidadePadrao}`;
+        console.log(`📍 Com cidade: "${enderecoLimpo}"`);
+      }
+
+      // Tentar múltiplas variações em ordem de precisão
+      const variacoes = this.gerarVariacoes(endereco, enderecoLimpo);
+      
+      for (let i = 0; i < variacoes.length; i++) {
+        const variacao = variacoes[i];
+        console.log(`\n🔍 Tentativa ${i + 1}/${variacoes.length}: "${variacao}"`);
+        
+        const resultado = await this.buscarComRetry(variacao);
+        
+        if (resultado) {
+          // Validar resultado (está na região esperada?)
+          if (this.validarResultado(resultado)) {
+            console.log(`✅ ENCONTRADO: ${resultado.enderecoFormatado}`);
+            console.log(`   📍 Coordenadas: ${resultado.latitude.toFixed(7)}, ${resultado.longitude.toFixed(7)}`);
+            console.log(`   🎯 Confiança: ${resultado.confianca || 'média'}`);
+            return resultado;
+          } else {
+            console.log(`⚠️ Resultado fora da região esperada, tentando próxima variação...`);
+          }
+        }
+      }
+
+      console.log('❌ Endereço não encontrado em nenhuma tentativa');
+      return null;
+
+    } catch (error) {
+      console.error('❌ Erro no geocoding:', error.message);
+      return null;
+    }
+  },
+
+  /**
+   * Gerar variações do endereço para múltiplas tentativas
+   */
+  gerarVariacoes(original, limpo) {
+    const variacoes = [];
+    
+    // 1. Endereço limpo completo
+    variacoes.push(limpo);
+    
+    // 2. Com estado explícito
+    if (!limpo.toLowerCase().includes(this.estadoPadrao.toLowerCase())) {
+      variacoes.push(`${limpo}, ${this.estadoPadrao}`);
+    }
+    
+    // 3. Com país
+    variacoes.push(`${limpo}, ${this.paisPadrao}`);
+    
+    // 4. Original com cidade
+    if (!this.temCidade(original)) {
+      variacoes.push(`${original}, ${this.cidadePadrao}, ${this.estadoPadrao}`);
+    }
+    
+    // 5. Sem número (às vezes ajuda)
+    const semNumero = limpo.replace(/,?\s*\d+\s*/, ' ').trim();
+    if (semNumero !== limpo) {
+      variacoes.push(`${semNumero}, ${this.cidadePadrao}`);
+    }
+    
+    // 6. Formato estruturado
+    const partes = limpo.split(',').map(p => p.trim());
+    if (partes.length >= 2) {
+      variacoes.push(`${partes[0]}, ${this.cidadePadrao}, ${this.estadoPadrao}, Brasil`);
+    }
+    
+    // Remover duplicatas mantendo ordem
+    return [...new Set(variacoes)];
+  },
+
+  /**
+   * Busca com retry automático
+   */
+  async buscarComRetry(endereco, tentativa = 1) {
+    try {
+      const resultado = await this.buscarNominatim(endereco);
+      
+      if (resultado) {
+        return resultado;
+      }
+      
+      // Retry se ainda tem tentativas
+      if (tentativa < this.MAX_TENTATIVAS) {
+        console.log(`   ⏳ Tentativa ${tentativa} falhou, aguardando retry...`);
+        await this.sleep(this.DELAY_ENTRE_TENTATIVAS);
+        return this.buscarComRetry(endereco, tentativa + 1);
+      }
+      
+      return null;
+    } catch (e) {
+      if (tentativa < this.MAX_TENTATIVAS) {
+        await this.sleep(this.DELAY_ENTRE_TENTATIVAS);
+        return this.buscarComRetry(endereco, tentativa + 1);
+      }
+      return null;
+    }
+  },
+
+  /**
+   * Validar se resultado está na região esperada
+   */
+  validarResultado(resultado) {
+    if (!resultado || !resultado.latitude || !resultado.longitude) {
+      return false;
+    }
+    
+    // Validar se está no Brasil (aproximadamente)
+    const latMin = -33.7, latMax = 5.3;   // Brasil
+    const lonMin = -73.9, lonMax = -34.8;
+    
+    const lat = resultado.latitude;
+    const lon = resultado.longitude;
+    
+    if (lat < latMin || lat > latMax || lon < lonMin || lon > lonMax) {
+      console.log(`   ⚠️ Coordenadas fora do Brasil: ${lat}, ${lon}`);
+      return false;
+    }
+    
+    // Se temos cidade esperada, validar proximidade
+    // (opcional - pode ser expandido)
+    
+    return true;
+  },
+
+  sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  },
+
+  /**
+   * Busca no Nominatim (OpenStreetMap) - VERSÃO MELHORADA
+   */
+  async buscarNominatim(endereco) {
+    return new Promise((resolve) => {
+      const query = encodeURIComponent(endereco);
+      const url = `https://nominatim.openstreetmap.org/search?q=${query}&format=json&limit=3&countrycodes=br&addressdetails=1`;
+
+      const options = {
+        headers: {
+          'User-Agent': 'Rebeca-WhatsApp-Bot/2.0 (contato@ubmax.com.br)',
+          'Accept-Language': 'pt-BR,pt;q=0.9',
+          'Accept': 'application/json',
+        },
+        timeout: this.TIMEOUT_MS,
+      };
+
+      const req = https.get(url, options, (res) => {
+        let data = '';
+
+        res.on('data', chunk => data += chunk);
+        
+        res.on('end', () => {
+          try {
+            const results = JSON.parse(data);
+            
+            if (results && results.length > 0) {
+              // Pegar o resultado mais relevante
+              const r = this.selecionarMelhorResultado(results);
+              
+              if (r) {
+                resolve({
+                  latitude: parseFloat(r.lat),
+                  longitude: parseFloat(r.lon),
+                  enderecoFormatado: r.display_name,
+                  enderecoSimplificado: this.simplificarEndereco(r),
+                  bairro: r.address?.suburb || r.address?.neighbourhood,
+                  cidade: r.address?.city || r.address?.town || r.address?.village,
+                  estado: r.address?.state,
+                  cep: r.address?.postcode,
+                  tipo: r.type,
+                  classe: r.class,
+                  importancia: parseFloat(r.importance || 0),
+                  confianca: this.calcularConfianca(r)
+                });
+              } else {
+                resolve(null);
+              }
+            } else {
+              resolve(null);
+            }
+          } catch (e) {
+            console.error('   ❌ Erro parsing Nominatim:', e.message);
+            resolve(null);
+          }
+        });
+
+      });
+      
+      req.on('error', (err) => {
+        console.error('   ❌ Erro requisição Nominatim:', err.message);
+        resolve(null);
+      });
+      
+      req.on('timeout', () => {
+        console.error('   ❌ Timeout Nominatim');
+        req.destroy();
+        resolve(null);
+      });
+    });
+  },
+
+  /**
+   * Selecionar melhor resultado de múltiplos
+   */
+  selecionarMelhorResultado(results) {
+    if (!results || results.length === 0) return null;
+    if (results.length === 1) return results[0];
+    
+    // Priorizar por tipo
+    const prioridades = ['house', 'building', 'shop', 'amenity', 'road', 'neighbourhood'];
+    
+    for (const tipo of prioridades) {
+      const resultado = results.find(r => r.type === tipo);
+      if (resultado) return resultado;
+    }
+    
+    // Ordenar por importância
+    const ordenados = results.sort((a, b) => 
+      parseFloat(b.importance || 0) - parseFloat(a.importance || 0)
+    );
+    
+    return ordenados[0];
+  },
+
+  /**
+   * Calcular confiança do resultado
+   */
+  calcularConfianca(resultado) {
+    const importancia = parseFloat(resultado.importance || 0);
+    
+    if (importancia > 0.8) return 'alta';
+    if (importancia > 0.5) return 'média-alta';
+    if (importancia > 0.3) return 'média';
+    if (importancia > 0.1) return 'baixa';
+    return 'muito-baixa';
+  },
+
+  /**
+   * Simplificar endereço para exibição
+   */
+  simplificarEndereco(resultado) {
+    const partes = [];
+    
+    if (resultado.address) {
+      const a = resultado.address;
+      
+      if (a.road) partes.push(a.road);
+      if (a.house_number) partes.push(a.house_number);
+      if (a.suburb || a.neighbourhood) partes.push(a.suburb || a.neighbourhood);
+      if (a.city || a.town || a.village) partes.push(a.city || a.town || a.village);
+    }
+    
+    return partes.join(', ') || resultado.display_name;
+  },
+
+  /**
+   * Calcula distância entre duas coordenadas (Haversine) - ULTRA PRECISO
+   */
+  calcularDistancia(lat1, lon1, lat2, lon2) {
+    const R = 6371.0088; // Raio médio da Terra em km (WGS84)
+    const dLat = this.toRad(lat2 - lat1);
+    const dLon = this.toRad(lon2 - lon1);
+    const a = 
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(this.toRad(lat1)) * Math.cos(this.toRad(lat2)) * 
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  },
+
+  toRad(deg) {
+    return deg * (Math.PI / 180);
+  },
+
+  /**
+   * Estima tempo de chegada baseado na distância (MAIS PRECISO)
+   */
+  estimarTempo(distanciaKm) {
+    // Média de 30km/h em cidade + 20% trânsito
+    const minutos = Math.ceil((distanciaKm / 0.5) * 1.2);
+    return Math.max(2, Math.min(minutos, 60)); // Entre 2 e 60 minutos
+  },
+
+  /**
+   * Limpa o endereço para melhor busca
+   */
+  limparEndereco(endereco) {
+    return endereco
+      .trim()
+      .replace(/\s+/g, ' ')
+      // Normalizar abreviações comuns
+      .replace(/\br\.?\s*/gi, 'Rua ')
+      .replace(/\bav\.?\s*/gi, 'Avenida ')
+      .replace(/\btrav\.?\s*/gi, 'Travessa ')
+      .replace(/\bal\.?\s*/gi, 'Alameda ')
+      .replace(/\bpç\.?\s*/gi, 'Praça ')
+      .replace(/\bn[º°]?\s*/gi, '')
+      .replace(/\bnumero\s*/gi, '')
+      .replace(/\bnum\s*/gi, '')
+      // Remover pontuação excessiva
+      .replace(/[,]+/g, ',')
+      .replace(/^,|,$/g, '');
+  },
+
+  /**
+   * Verifica se o endereço já tem cidade
+   */
+  temCidade(endereco) {
+    const cidades = [
+      'guaiçara', 'guaicara', 'lins', 'marília', 'marilia', 
+      'bauru', 'assis', 'ourinhos', 'tupã', 'tupa',
+      'são paulo', 'sao paulo', 'sp'
+    ];
+    const lower = endereco.toLowerCase();
+    return cidades.some(c => lower.includes(c));
+  },
+
+  /**
+   * Geocodificação reversa (coordenadas → endereço)
+   */
+  async reverso(latitude, longitude) {
+    return new Promise((resolve) => {
+      const url = `https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&addressdetails=1`;
+
+      const options = {
+        headers: {
+          'User-Agent': 'Rebeca-WhatsApp-Bot/1.0 (contato@ubmax.com.br)',
+          'Accept-Language': 'pt-BR,pt;q=0.9',
+        },
+        timeout: 10000,
+      };
+
+      https.get(url, options, (res) => {
+        let data = '';
+
+        res.on('data', chunk => data += chunk);
+        
+        res.on('end', () => {
+          try {
+            const r = JSON.parse(data);
+            
+            if (r && r.address) {
+              const parts = [];
+              if (r.address.road) parts.push(r.address.road);
+              if (r.address.house_number) parts.push(r.address.house_number);
+              if (r.address.suburb || r.address.neighbourhood) {
+                parts.push(r.address.suburb || r.address.neighbourhood);
+              }
+              if (r.address.city || r.address.town || r.address.village) {
+                parts.push(r.address.city || r.address.town || r.address.village);
+              }
+
+              resolve({
+                endereco: parts.join(', ') || r.display_name,
+                enderecoCompleto: r.display_name,
+                rua: r.address.road,
+                numero: r.address.house_number,
+                bairro: r.address.suburb || r.address.neighbourhood,
+                cidade: r.address.city || r.address.town || r.address.village,
+                estado: r.address.state,
+                cep: r.address.postcode,
+              });
+            } else {
+              resolve(null);
+            }
+          } catch (e) {
+            console.error('Erro parsing reverso:', e);
+            resolve(null);
+          }
+        });
+
+      }).on('error', (err) => {
+        console.error('Erro requisição reverso:', err.message);
+        resolve(null);
+      });
+    });
+  },
+};
+
+module.exports = GeocodingService;

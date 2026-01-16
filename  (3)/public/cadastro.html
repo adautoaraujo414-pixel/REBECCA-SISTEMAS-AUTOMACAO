@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>REBECA - Cadastre sua Frota</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      min-height: 100vh;
+      color: #333;
+    }
+
+    /* Header */
+    .header {
+      background: rgba(255,255,255,0.05);
+      backdrop-filter: blur(10px);
+      padding: 15px 30px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: white;
+      font-weight: 700;
+      font-size: 1.5rem;
+    }
+
+    .logo-icon {
+      font-size: 2rem;
+    }
+
+    .header-btn {
+      background: transparent;
+      border: 2px solid #fff;
+      color: white;
+      padding: 10px 25px;
+      border-radius: 25px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .header-btn:hover {
+      background: white;
+      color: #1a1a2e;
+    }
+
+    /* Hero */
+    .hero {
+      text-align: center;
+      padding: 60px 20px 40px;
+      color: white;
+    }
+
+    .hero h1 {
+      font-size: 2.8rem;
+      font-weight: 800;
+      margin-bottom: 15px;
+      background: linear-gradient(135deg, #fff 0%, #a78bfa 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hero p {
+      font-size: 1.2rem;
+      opacity: 0.9;
+      max-width: 600px;
+      margin: 0 auto 25px;
+    }
+
+    .trial-badge {
+      display: inline-block;
+      background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+      color: white;
+      padding: 10px 25px;
+      border-radius: 30px;
+      font-weight: 700;
+      font-size: 1.1rem;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(1.05); }
+    }
+
+    /* Features */
+    .features {
+      display: flex;
+      justify-content: center;
+      gap: 30px;
+      padding: 20px;
+      flex-wrap: wrap;
+      margin-bottom: 30px;
+    }
+
+    .feature {
+      background: rgba(255,255,255,0.1);
+      backdrop-filter: blur(10px);
+      padding: 20px 25px;
+      border-radius: 15px;
+      color: white;
+      text-align: center;
+      min-width: 150px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .feature-icon {
+      font-size: 2.5rem;
+      margin-bottom: 10px;
+    }
+
+    .feature-text {
+      font-weight: 500;
+      font-size: 0.95rem;
+    }
+
+    /* Container principal */
+    .main-container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 20px 50px;
+    }
+
+    /* Planos */
+    .plans-section {
+      margin-bottom: 40px;
+    }
+
+    .section-title {
+      text-align: center;
+      color: white;
+      font-size: 1.8rem;
+      margin-bottom: 30px;
+    }
+
+    .plans-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      gap: 25px;
+    }
+
+    .plan-card {
+      background: white;
+      border-radius: 20px;
+      padding: 30px;
+      text-align: center;
+      position: relative;
+      transition: all 0.3s;
+      cursor: pointer;
+      border: 3px solid transparent;
+    }
+
+    .plan-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+    }
+
+    .plan-card.selected {
+      border-color: #8b5cf6;
+      box-shadow: 0 0 0 4px rgba(139, 92, 246, 0.3);
+    }
+
+    .plan-card.popular {
+      border-color: #8b5cf6;
+    }
+
+    .popular-badge {
+      position: absolute;
+      top: -12px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+      color: white;
+      padding: 5px 20px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      font-weight: 700;
+    }
+
+    .plan-name {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #1a1a2e;
+      margin-bottom: 10px;
+    }
+
+    .plan-price {
+      font-size: 2.5rem;
+      font-weight: 800;
+      color: #8b5cf6;
+      margin-bottom: 5px;
+    }
+
+    .plan-price span {
+      font-size: 1rem;
+      font-weight: 500;
+      color: #666;
+    }
+
+    .plan-subtitle {
+      color: #888;
+      font-size: 0.9rem;
+      margin-bottom: 20px;
+    }
+
+    .plan-features {
+      text-align: left;
+      margin-bottom: 20px;
+    }
+
+    .plan-feature {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 0;
+      color: #555;
+      font-size: 0.95rem;
+    }
+
+    .plan-feature .check {
+      color: #10b981;
+      font-weight: bold;
+    }
+
+    .plan-feature .x {
+      color: #ef4444;
+    }
+
+    .select-plan-btn {
+      width: 100%;
+      padding: 14px;
+      border: 2px solid #8b5cf6;
+      background: transparent;
+      color: #8b5cf6;
+      border-radius: 10px;
+      font-weight: 700;
+      font-size: 1rem;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .select-plan-btn:hover, .plan-card.selected .select-plan-btn {
+      background: #8b5cf6;
+      color: white;
+    }
+
+    /* Formulário */
+    .form-section {
+      background: white;
+      border-radius: 20px;
+      padding: 40px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    }
+
+    .form-title {
+      text-align: center;
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: #1a1a2e;
+      margin-bottom: 30px;
+    }
+
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 20px;
+    }
+
+    .form-group {
+      margin-bottom: 5px;
+    }
+
+    .form-group.full-width {
+      grid-column: 1 / -1;
+    }
+
+    .form-group label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 600;
+      color: #333;
+      font-size: 0.9rem;
+    }
+
+    .form-group label .required {
+      color: #ef4444;
+    }
+
+    .form-group input, .form-group select {
+      width: 100%;
+      padding: 14px 16px;
+      border: 2px solid #e5e7eb;
+      border-radius: 10px;
+      font-size: 1rem;
+      transition: all 0.3s;
+      font-family: inherit;
+    }
+
+    .form-group input:focus, .form-group select:focus {
+      outline: none;
+      border-color: #8b5cf6;
+      box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.2);
+    }
+
+    .form-group small {
+      display: block;
+      margin-top: 5px;
+      color: #888;
+      font-size: 0.8rem;
+    }
+
+    .phone-input {
+      display: flex;
+      gap: 10px;
+    }
+
+    .phone-input .ddd {
+      width: 80px;
+    }
+
+    .terms {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      margin: 25px 0;
+      font-size: 0.9rem;
+      color: #555;
+    }
+
+    .terms input {
+      margin-top: 3px;
+      width: 18px;
+      height: 18px;
+      cursor: pointer;
+    }
+
+    .terms a {
+      color: #8b5cf6;
+      text-decoration: none;
+    }
+
+    .submit-btn {
+      width: 100%;
+      padding: 18px;
+      background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+      color: white;
+      border: none;
+      border-radius: 12px;
+      font-size: 1.2rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.3s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+    }
+
+    .submit-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px rgba(139, 92, 246, 0.4);
+    }
+
+    .submit-btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .submit-btn .icon {
+      font-size: 1.3rem;
+    }
+
+    /* Loading */
+    .loading {
+      display: inline-block;
+      width: 22px;
+      height: 22px;
+      border: 3px solid rgba(255,255,255,0.3);
+      border-radius: 50%;
+      border-top-color: #fff;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* Mensagens */
+    .message {
+      padding: 15px 20px;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      display: none;
+      font-size: 0.95rem;
+    }
+
+    .message.error {
+      background: #fef2f2;
+      color: #dc2626;
+      border: 1px solid #fecaca;
+    }
+
+    .message.success {
+      background: #f0fdf4;
+      color: #16a34a;
+      border: 1px solid #bbf7d0;
+    }
+
+    /* Sucesso */
+    .success-container {
+      display: none;
+      text-align: center;
+      padding: 50px 30px;
+    }
+
+    .success-icon {
+      font-size: 5rem;
+      margin-bottom: 20px;
+    }
+
+    .success-container h2 {
+      color: #10b981;
+      font-size: 2rem;
+      margin-bottom: 15px;
+    }
+
+    .success-container p {
+      color: #555;
+      font-size: 1.1rem;
+      line-height: 1.7;
+      margin-bottom: 20px;
+    }
+
+    .success-details {
+      background: #f8fafc;
+      border-radius: 15px;
+      padding: 25px;
+      text-align: left;
+      margin: 25px 0;
+    }
+
+    .success-details h3 {
+      color: #1a1a2e;
+      margin-bottom: 15px;
+    }
+
+    .success-details p {
+      margin: 8px 0;
+      font-size: 0.95rem;
+    }
+
+    .success-btn {
+      display: inline-block;
+      background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
+      color: white;
+      padding: 15px 40px;
+      border-radius: 10px;
+      font-weight: 700;
+      text-decoration: none;
+      transition: all 0.3s;
+    }
+
+    .success-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px rgba(139, 92, 246, 0.4);
+    }
+
+    /* Preços info */
+    .pricing-info {
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(109, 40, 217, 0.1) 100%);
+      border: 1px solid rgba(139, 92, 246, 0.3);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 25px;
+    }
+
+    .pricing-info h4 {
+      color: #6d28d9;
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .pricing-info p {
+      color: #555;
+      font-size: 0.9rem;
+      margin: 5px 0;
+    }
+
+    /* Responsivo */
+    @media (max-width: 768px) {
+      .hero h1 {
+        font-size: 2rem;
+      }
+
+      .features {
+        gap: 15px;
+      }
+
+      .feature {
+        min-width: 120px;
+        padding: 15px;
+      }
+
+      .form-section {
+        padding: 25px;
+      }
+
+      .plan-card {
+        padding: 25px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <div class="header">
+    <div class="logo">
+      <span class="logo-icon">🚕</span>
+      <span>REBECA</span>
+    </div>
+    <a href="/master" class="header-btn">Já tenho conta</a>
+  </div>
+
+  <!-- Hero -->
+  <div class="hero">
+    <h1>Automatize sua frota com IA</h1>
+    <p>Atendimento 24h via WhatsApp, GPS em tempo real, anti-fraude e muito mais!</p>
+    <div class="trial-badge">🎁 TESTE GRÁTIS POR 5 DIAS</div>
+  </div>
+
+  <!-- Features -->
+  <div class="features">
+    <div class="feature">
+      <div class="feature-icon">🤖</div>
+      <div class="feature-text">IA Atendente</div>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">📍</div>
+      <div class="feature-text">GPS Tempo Real</div>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">🔒</div>
+      <div class="feature-text">Anti-Fraude</div>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">📊</div>
+      <div class="feature-text">Dashboard</div>
+    </div>
+    <div class="feature">
+      <div class="feature-icon">💬</div>
+      <div class="feature-text">Chat Frota</div>
+    </div>
+  </div>
+
+  <!-- Container Principal -->
+  <div class="main-container">
+    <!-- Planos -->
+    <div class="plans-section">
+      <h2 class="section-title">Escolha seu plano</h2>
+      <div class="plans-grid">
+        <!-- Plano Básico -->
+        <div class="plan-card" data-plan="basico" onclick="selectPlan(this)">
+          <div class="plan-name">Básico</div>
+          <div class="plan-price">R$ 49,90<span>/motorista</span></div>
+          <div class="plan-subtitle">Para frotas até 40 motoristas</div>
+          <div class="plan-features">
+            <div class="plan-feature"><span class="check">✓</span> Atendimento IA 24h</div>
+            <div class="plan-feature"><span class="check">✓</span> GPS em tempo real</div>
+            <div class="plan-feature"><span class="check">✓</span> Dashboard admin</div>
+            <div class="plan-feature"><span class="check">✓</span> Chat da frota</div>
+            <div class="plan-feature"><span class="check">✓</span> Relatórios básicos</div>
+            <div class="plan-feature"><span class="x">✗</span> API de integração</div>
+            <div class="plan-feature"><span class="x">✗</span> White Label</div>
+          </div>
+          <button class="select-plan-btn">Selecionar</button>
+        </div>
+
+        <!-- Plano Profissional -->
+        <div class="plan-card popular" data-plan="profissional" onclick="selectPlan(this)">
+          <div class="popular-badge">⭐ MAIS POPULAR</div>
+          <div class="plan-name">Profissional</div>
+          <div class="plan-price">R$ 41,90<span>/motorista</span></div>
+          <div class="plan-subtitle">Para frotas acima de 40 motoristas</div>
+          <div class="plan-features">
+            <div class="plan-feature"><span class="check">✓</span> Tudo do Básico</div>
+            <div class="plan-feature"><span class="check">✓</span> Anti-fraude avançado</div>
+            <div class="plan-feature"><span class="check">✓</span> Relatórios completos</div>
+            <div class="plan-feature"><span class="check">✓</span> Suporte prioritário</div>
+            <div class="plan-feature"><span class="check">✓</span> API de integração</div>
+            <div class="plan-feature"><span class="x">✗</span> White Label</div>
+          </div>
+          <button class="select-plan-btn">Selecionar</button>
+        </div>
+
+        <!-- Plano Enterprise -->
+        <div class="plan-card" data-plan="enterprise" onclick="selectPlan(this)">
+          <div class="plan-name">Enterprise</div>
+          <div class="plan-price">R$ 35,90<span>/motorista</span></div>
+          <div class="plan-subtitle">Para grandes frotas (100+)</div>
+          <div class="plan-features">
+            <div class="plan-feature"><span class="check">✓</span> Tudo do Profissional</div>
+            <div class="plan-feature"><span class="check">✓</span> White Label completo</div>
+            <div class="plan-feature"><span class="check">✓</span> Sua marca no sistema</div>
+            <div class="plan-feature"><span class="check">✓</span> Gerente de conta</div>
+            <div class="plan-feature"><span class="check">✓</span> SLA garantido</div>
+            <div class="plan-feature"><span class="check">✓</span> Treinamento incluído</div>
+          </div>
+          <button class="select-plan-btn">Selecionar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Formulário -->
+    <div class="form-section">
+      <div id="formContent">
+        <h2 class="form-title">📝 Cadastre sua empresa</h2>
+
+        <div class="message error" id="errorMessage"></div>
+        <div class="message success" id="successMessageSmall"></div>
+
+        <div class="pricing-info">
+          <h4>💰 Como funciona o pagamento</h4>
+          <p>• <strong>5 dias grátis</strong> para testar todas as funcionalidades</p>
+          <p>• Após o trial, você paga apenas pelos motoristas ativos</p>
+          <p>• Sem fidelidade, cancele quando quiser</p>
+        </div>
+
+        <form id="cadastroForm" onsubmit="return submitForm(event)">
+          <input type="hidden" id="planoSelecionado" name="plano" value="basico">
+          
+          <div class="form-grid">
+            <div class="form-group">
+              <label>Nome da Empresa <span class="required">*</span></label>
+              <input type="text" id="nomeEmpresa" name="nome" placeholder="Ex: Táxi Rápido" required>
+            </div>
+
+            <div class="form-group">
+              <label>Nome do Responsável <span class="required">*</span></label>
+              <input type="text" id="nomeResponsavel" name="responsavel" placeholder="Seu nome completo" required>
+            </div>
+
+            <div class="form-group">
+              <label>Email <span class="required">*</span></label>
+              <input type="email" id="email" name="email" placeholder="seu@email.com" required>
+              <small>Enviaremos os dados de acesso para este email</small>
+            </div>
+
+            <div class="form-group">
+              <label>WhatsApp <span class="required">*</span></label>
+              <input type="tel" id="telefone" name="telefone" placeholder="(00) 00000-0000" required>
+            </div>
+
+            <div class="form-group">
+              <label>Cidade <span class="required">*</span></label>
+              <input type="text" id="cidade" name="cidade" placeholder="Ex: São Paulo - SP" required>
+            </div>
+
+            <div class="form-group">
+              <label>Quantos motoristas? <span class="required">*</span></label>
+              <select id="qtdMotoristas" name="qtd_motoristas" required onchange="updatePlanByDrivers()">
+                <option value="">Selecione...</option>
+                <option value="1-10">1 a 10 motoristas</option>
+                <option value="11-20">11 a 20 motoristas</option>
+                <option value="21-40">21 a 40 motoristas</option>
+                <option value="41-70">41 a 70 motoristas</option>
+                <option value="71-100">71 a 100 motoristas</option>
+                <option value="100+">Mais de 100 motoristas</option>
+              </select>
+            </div>
+
+            <div class="form-group full-width">
+              <label>CNPJ (opcional)</label>
+              <input type="text" id="cnpj" name="cnpj" placeholder="00.000.000/0000-00">
+            </div>
+          </div>
+
+          <div class="terms">
+            <input type="checkbox" id="termos" required>
+            <label for="termos">
+              Li e aceito os <a href="#" target="_blank">Termos de Uso</a> e 
+              <a href="#" target="_blank">Política de Privacidade</a>
+            </label>
+          </div>
+
+          <button type="submit" class="submit-btn" id="submitBtn">
+            <span class="icon">🚀</span>
+            <span id="btnText">Começar teste grátis de 5 dias</span>
+          </button>
+        </form>
+      </div>
+
+      <!-- Mensagem de Sucesso -->
+      <div class="success-container" id="successContainer">
+        <div class="success-icon">🎉</div>
+        <h2>Cadastro realizado com sucesso!</h2>
+        <p>Sua conta foi criada e você já pode começar a usar o sistema.</p>
+        
+        <div class="success-details">
+          <h3>📧 Dados de Acesso</h3>
+          <p><strong>Email:</strong> <span id="successEmail"></span></p>
+          <p><strong>Senha provisória:</strong> <span id="successSenha"></span></p>
+          <p><strong>Plano:</strong> <span id="successPlano"></span></p>
+          <p><strong>Trial:</strong> 5 dias grátis a partir de hoje</p>
+        </div>
+
+        <a href="/admin" class="success-btn">Acessar Painel Admin →</a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let planoSelecionado = 'basico';
+
+    // Selecionar plano
+    function selectPlan(element) {
+      // Remove seleção anterior
+      document.querySelectorAll('.plan-card').forEach(card => {
+        card.classList.remove('selected');
+      });
+      
+      // Adiciona seleção
+      element.classList.add('selected');
+      planoSelecionado = element.dataset.plan;
+      document.getElementById('planoSelecionado').value = planoSelecionado;
+    }
+
+    // Atualizar plano baseado na qtd de motoristas
+    function updatePlanByDrivers() {
+      const qtd = document.getElementById('qtdMotoristas').value;
+      let plan = 'basico';
+      
+      if (qtd === '41-70' || qtd === '71-100') {
+        plan = 'profissional';
+      } else if (qtd === '100+') {
+        plan = 'enterprise';
+      }
+
+      // Selecionar visualmente
+      document.querySelectorAll('.plan-card').forEach(card => {
+        if (card.dataset.plan === plan) {
+          selectPlan(card);
+        }
+      });
+    }
+
+    // Máscara telefone
+    document.getElementById('telefone').addEventListener('input', function(e) {
+      let v = e.target.value.replace(/\D/g, '');
+      if (v.length > 11) v = v.slice(0, 11);
+      if (v.length > 6) {
+        v = `(${v.slice(0,2)}) ${v.slice(2,7)}-${v.slice(7)}`;
+      } else if (v.length > 2) {
+        v = `(${v.slice(0,2)}) ${v.slice(2)}`;
+      } else if (v.length > 0) {
+        v = `(${v}`;
+      }
+      e.target.value = v;
+    });
+
+    // Máscara CNPJ
+    document.getElementById('cnpj').addEventListener('input', function(e) {
+      let v = e.target.value.replace(/\D/g, '');
+      if (v.length > 14) v = v.slice(0, 14);
+      if (v.length > 12) {
+        v = `${v.slice(0,2)}.${v.slice(2,5)}.${v.slice(5,8)}/${v.slice(8,12)}-${v.slice(12)}`;
+      } else if (v.length > 8) {
+        v = `${v.slice(0,2)}.${v.slice(2,5)}.${v.slice(5,8)}/${v.slice(8)}`;
+      } else if (v.length > 5) {
+        v = `${v.slice(0,2)}.${v.slice(2,5)}.${v.slice(5)}`;
+      } else if (v.length > 2) {
+        v = `${v.slice(0,2)}.${v.slice(2)}`;
+      }
+      e.target.value = v;
+    });
+
+    // Mostrar erro
+    function showError(msg) {
+      const el = document.getElementById('errorMessage');
+      el.textContent = msg;
+      el.style.display = 'block';
+      setTimeout(() => el.style.display = 'none', 5000);
+    }
+
+    // Submit form
+    async function submitForm(e) {
+      e.preventDefault();
+      
+      const btn = document.getElementById('submitBtn');
+      const btnText = document.getElementById('btnText');
+      
+      // Validar termos
+      if (!document.getElementById('termos').checked) {
+        showError('Você precisa aceitar os termos de uso');
+        return false;
+      }
+
+      // Loading
+      btn.disabled = true;
+      btnText.innerHTML = '<span class="loading"></span> Criando sua conta...';
+
+      const dados = {
+        nome: document.getElementById('nomeEmpresa').value,
+        responsavel: document.getElementById('nomeResponsavel').value,
+        email: document.getElementById('email').value,
+        telefone: document.getElementById('telefone').value.replace(/\D/g, ''),
+        cidade: document.getElementById('cidade').value,
+        qtd_motoristas: document.getElementById('qtdMotoristas').value,
+        cnpj: document.getElementById('cnpj').value.replace(/\D/g, ''),
+        plano: planoSelecionado
+      };
+
+      try {
+        const response = await fetch('/api/master/empresas/cadastrar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(dados)
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+          // Mostra sucesso
+          document.getElementById('formContent').style.display = 'none';
+          document.getElementById('successContainer').style.display = 'block';
+          document.getElementById('successEmail').textContent = dados.email;
+          document.getElementById('successSenha').textContent = result.data.senha_provisoria || '123456';
+          document.getElementById('successPlano').textContent = planoSelecionado.charAt(0).toUpperCase() + planoSelecionado.slice(1);
+        } else {
+          showError(result.error || 'Erro ao criar conta. Tente novamente.');
+          btn.disabled = false;
+          btnText.textContent = 'Começar teste grátis de 5 dias';
+        }
+      } catch (error) {
+        showError('Erro de conexão. Verifique sua internet.');
+        btn.disabled = false;
+        btnText.textContent = 'Começar teste grátis de 5 dias';
+      }
+
+      return false;
+    }
+
+    // Selecionar plano básico por padrão
+    document.querySelector('.plan-card[data-plan="basico"]').classList.add('selected');
+  </script>
+</body>
+</html>

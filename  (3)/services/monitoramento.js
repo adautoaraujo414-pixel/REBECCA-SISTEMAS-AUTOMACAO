@@ -1,0 +1,654 @@
+// ========================================
+// REBECA - MONITORAMENTO DE CORRIDAS
+// Controla atrasos, cancela e reatribui
+// Integrado com Anti-Fraude e Notificações
+// ========================================
+
+const { query } = require('../database/connection');
+const { AntiFraude } = require('./antifraude');
+
+// Configurações de tempo (em minutos)
+const CONFIG_TEMPO = {
+  // Tolerância antes de avisar o cliente (minutos após previsão)
+  TOLERANCIA_AVISO: 2,
+  
+  // Tempo máximo de atraso antes de cancelar (minutos após previsão)
+  TEMPO_MAX_ATRASO: 5,
+  
+  // Intervalo de verificação (ms)
+  INTERVALO_VERIFICACAO: 30000, // 30 segundos
+  
+  // Distância mínima para considerar "chegou" (metros)
+  DISTANCIA_CHEGADA: 100,
+  
+  // Intervalo de verificação anti-fraude (ms)
+  INTERVALO_ANTIFRAUDE: 300000, // 5 minutos
+};
+
+// Status de monitoramento
+const STATUS_CORRIDA = {
+  AGUARDANDO_MOTORISTA: 'aguardando_motorista',
+  MOTORISTA_A_CAMINHO: 'motorista_a_caminho',
+  MOTORISTA_CHEGOU: 'motorista_chegou',
+  EM_VIAGEM: 'em_viagem',
+  FINALIZADA: 'finalizada',
+  CANCELADA: 'cancelada',
+  CANCELADA_ATRASO: 'cancelada_atraso',
+};
+
+class MonitoramentoCorridas {
+  constructor(whatsappClient, atribuicaoService) {
+    this.whatsapp = whatsappClient;
+    this.atribuicao = atribuicaoService;
+    this.corridasMonitoradas = new Map();
+    this.intervalo = null;
+    this.intervaloAntiFraude = null;
+    this.antiFraude = new AntiFraude(whatsappClient);
+    this.telefoneADM = null; // Será carregado da configuração
+  }
+
+  /**
+   * Inicia o monitoramento
+   */
+  async iniciar() {
+    console.log('👁️ Monitoramento de corridas iniciado');
+    
+    // Carregar telefone do ADM para notificações
+    await this.carregarConfigADM();
+    
+    // Monitoramento de corridas (atrasos)
+    this.intervalo = setInterval(() => {
+      this.verificarTodasCorridas();
+    }, CONFIG_TEMPO.INTERVALO_VERIFICACAO);
+    
+    // Verificação periódica de anti-fraude
+    this.intervaloAntiFraude = setInterval(() => {
+      this.verificarAntiFraude();
+    }, CONFIG_TEMPO.INTERVALO_ANTIFRAUDE);
+    
+    // Carregar corridas ativas ao iniciar
+    this.carregarCorridasAtivas();
+    
+    // Verificar anti-fraude na inicialização (após 30 segundos)
+    setTimeout(() => this.verificarAntiFraude(), 30000);
+  }
+
+  /**
+   * Para o monitoramento
+   */
+  parar() {
+    if (this.intervalo) {
+      clearInterval(this.intervalo);
+      this.intervalo = null;
+    }
+    if (this.intervaloAntiFraude) {
+      clearInterval(this.intervaloAntiFraude);
+      this.intervaloAntiFraude = null;
+    }
+    console.log('⏹️ Monitoramento de corridas parado');
+  }
+
+  /**
+   * Carrega configuração do ADM (telefone para notificações)
+   */
+  async carregarConfigADM() {
+    try {
+      const result = await query(`
+        SELECT valor FROM configuracoes WHERE chave = 'telefone_adm'
+        UNION
+        SELECT admin_whatsapp FROM empresas WHERE id = 1
+        LIMIT 1
+      `);
+      
+      if (result.rows[0]) {
+        this.telefoneADM = result.rows[0].valor || result.rows[0].admin_whatsapp;
+      }
+    } catch (error) {
+      console.log('⚠️ Telefone ADM não configurado para notificações');
+    }
+  }
+
+  /**
+   * Carrega corridas ativas do banco
+   */
+  async carregarCorridasAtivas() {
+    try {
+      const result = await query(`
+        SELECT c.*, m.nome as motorista_nome, m.telefone as motorista_telefone,
+               m.latitude as motorista_lat, m.longitude as motorista_lng,
+               cl.telefone as cliente_telefone, cl.nome as cliente_nome
+        FROM corridas c
+        JOIN motoristas m ON c.motorista_id = m.id
+        JOIN clientes cl ON c.cliente_id = cl.id
+        WHERE c.status IN ('aceita', 'motorista_a_caminho')
+          AND c.solicitado_em > NOW() - INTERVAL '2 hours'
+      `);
+
+      for (const corrida of result.rows) {
+        this.adicionarMonitoramento(corrida);
+      }
+
+      console.log(`📋 ${result.rows.length} corridas carregadas para monitoramento`);
+    } catch (error) {
+      console.error('❌ Erro ao carregar corridas:', error);
+    }
+  }
+
+  /**
+   * Adiciona corrida ao monitoramento
+   */
+  adicionarMonitoramento(corrida) {
+    const dados = {
+      id: corrida.id,
+      cliente_id: corrida.cliente_id,
+      cliente_telefone: corrida.cliente_telefone,
+      cliente_nome: corrida.cliente_nome,
+      motorista_id: corrida.motorista_id,
+      motorista_nome: corrida.motorista_nome,
+      motorista_telefone: corrida.motorista_telefone,
+      origem_lat: corrida.origem_lat,
+      origem_lng: corrida.origem_lng,
+      origem_endereco: corrida.origem_endereco,
+      destino_endereco: corrida.destino_endereco,
+      tempo_estimado: corrida.tempo_estimado || 5, // minutos
+      hora_aceite: corrida.aceito_em || new Date(),
+      hora_prevista_chegada: this.calcularHoraPrevista(corrida),
+      avisou_atraso: false,
+      tentativas_reatribuicao: corrida.tentativas_reatribuicao || 0,
+      prioridade: corrida.prioridade || false,
+    };
+
+    this.corridasMonitoradas.set(corrida.id, dados);
+    console.log(`👁️ Corrida #${corrida.id} adicionada ao monitoramento (ETA: ${dados.tempo_estimado} min)`);
+  }
+
+  /**
+   * Remove corrida do monitoramento
+   */
+  removerMonitoramento(corridaId) {
+    this.corridasMonitoradas.delete(corridaId);
+    console.log(`✅ Corrida #${corridaId} removida do monitoramento`);
+  }
+
+  /**
+   * Calcula hora prevista de chegada
+   */
+  calcularHoraPrevista(corrida) {
+    const horaAceite = new Date(corrida.aceito_em || new Date());
+    const tempoEstimado = corrida.tempo_estimado || 5;
+    return new Date(horaAceite.getTime() + tempoEstimado * 60 * 1000);
+  }
+
+  /**
+   * Verifica todas as corridas monitoradas
+   */
+  async verificarTodasCorridas() {
+    const agora = new Date();
+
+    for (const [corridaId, dados] of this.corridasMonitoradas) {
+      try {
+        await this.verificarCorrida(corridaId, dados, agora);
+      } catch (error) {
+        console.error(`❌ Erro ao verificar corrida #${corridaId}:`, error);
+      }
+    }
+  }
+
+  /**
+   * Verifica uma corrida específica
+   */
+  async verificarCorrida(corridaId, dados, agora) {
+    // Buscar status atual da corrida
+    const corridaAtual = await this.buscarCorridaAtual(corridaId);
+    
+    if (!corridaAtual) {
+      this.removerMonitoramento(corridaId);
+      return;
+    }
+
+    // Se já chegou, finalizou ou cancelou, remover do monitoramento
+    if (['motorista_chegou', 'em_viagem', 'finalizada', 'cancelada', 'cancelada_atraso'].includes(corridaAtual.status)) {
+      this.removerMonitoramento(corridaId);
+      return;
+    }
+
+    // Calcular atraso
+    const minutosAtraso = this.calcularMinutosAtraso(dados.hora_prevista_chegada, agora);
+
+    console.log(`⏱️ Corrida #${corridaId}: ${minutosAtraso.toFixed(1)} min de atraso`);
+
+    // 1. Se passou da tolerância e não avisou ainda → AVISAR CLIENTE
+    if (minutosAtraso >= CONFIG_TEMPO.TOLERANCIA_AVISO && !dados.avisou_atraso) {
+      await this.avisarClienteAtraso(dados, minutosAtraso);
+      dados.avisou_atraso = true;
+      this.corridasMonitoradas.set(corridaId, dados);
+    }
+
+    // 2. Se passou do tempo máximo → CANCELAR E REATRIBUIR
+    if (minutosAtraso >= CONFIG_TEMPO.TEMPO_MAX_ATRASO) {
+      await this.cancelarPorAtrasoEReatribuir(dados);
+    }
+  }
+
+  /**
+   * Busca corrida atual no banco
+   */
+  async buscarCorridaAtual(corridaId) {
+    try {
+      const result = await query(`
+        SELECT c.*, m.latitude as motorista_lat, m.longitude as motorista_lng
+        FROM corridas c
+        LEFT JOIN motoristas m ON c.motorista_id = m.id
+        WHERE c.id = $1
+      `, [corridaId]);
+
+      return result.rows[0] || null;
+    } catch (error) {
+      console.error('Erro ao buscar corrida:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Calcula minutos de atraso
+   */
+  calcularMinutosAtraso(horaPrevista, agora) {
+    const diff = agora.getTime() - new Date(horaPrevista).getTime();
+    return diff / (1000 * 60); // Em minutos
+  }
+
+  /**
+   * Avisa cliente sobre atraso
+   */
+  async avisarClienteAtraso(dados, minutosAtraso) {
+    console.log(`⚠️ Avisando cliente sobre atraso na corrida #${dados.id}`);
+
+    // Mensagem CURTA conforme padrão Rebeca
+    const mensagem = `⚠️ ${dados.motorista_nome} está com um pequeno atraso.
+
+Se demorar muito, vou buscar outro pra você.`;
+
+    try {
+      // Enviar mensagem para o cliente
+      await this.whatsapp.enviarMensagem(dados.cliente_telefone, mensagem);
+
+      // Registrar no banco
+      await query(`
+        INSERT INTO mensagens (telefone, tipo, conteudo, direcao)
+        VALUES ($1, 'texto', $2, 'saida')
+      `, [dados.cliente_telefone, mensagem]);
+
+      // Avisar motorista também
+      const mensagemMotorista = `⚠️ Você está atrasado.
+
+Cliente: ${dados.cliente_nome}
+Local: ${dados.origem_endereco}
+
+Agilize ou avise se tiver problema.`;
+
+      await this.whatsapp.enviarMensagem(dados.motorista_telefone, mensagemMotorista);
+
+      console.log(`✅ Cliente e motorista avisados sobre atraso`);
+    } catch (error) {
+      console.error('❌ Erro ao avisar sobre atraso:', error);
+    }
+  }
+
+  /**
+   * Cancela corrida por atraso e busca outro motorista
+   */
+  async cancelarPorAtrasoEReatribuir(dados) {
+    console.log(`🔄 Cancelando corrida #${dados.id} por atraso e buscando outro motorista`);
+
+    try {
+      // 1. Cancelar corrida atual
+      await query(`
+        UPDATE corridas 
+        SET status = 'cancelada_atraso',
+            cancelado_em = NOW(),
+            motivo_cancelamento = 'Motorista não chegou no tempo estimado'
+        WHERE id = $1
+      `, [dados.id]);
+
+      // 2. Marcar motorista como "atrasou" (para estatísticas)
+      await query(`
+        UPDATE motoristas 
+        SET qtd_atrasos = COALESCE(qtd_atrasos, 0) + 1,
+            atualizado_em = NOW()
+        WHERE id = $1
+      `, [dados.motorista_id]);
+
+      // 2.1 Registrar no sistema Anti-Fraude e notificar ADM se necessário
+      await this.registrarAtrasoAntiFraude(dados.motorista_id, dados.motorista_nome, dados.id);
+
+      // 3. Avisar motorista que foi substituído
+      const mensagemMotoristaRemovido = `❌ Corrida cancelada por atraso.
+
+O cliente foi redirecionado pra outro motorista.`;
+
+      await this.whatsapp.enviarMensagem(dados.motorista_telefone, mensagemMotoristaRemovido);
+
+      // 4. Buscar novo motorista (excluindo o que atrasou)
+      const novoMotorista = await this.buscarNovoMotorista(dados);
+
+      if (novoMotorista) {
+        // 5. Criar nova corrida com PRIORIDADE
+        await this.criarCorridaPrioridade(dados, novoMotorista);
+      } else {
+        // 6. Se não encontrou, avisar cliente
+        await this.avisarSemMotoristaDisponivel(dados);
+      }
+
+      // 7. Remover do monitoramento
+      this.removerMonitoramento(dados.id);
+
+    } catch (error) {
+      console.error('❌ Erro ao cancelar e reatribuir:', error);
+    }
+  }
+
+  /**
+   * Busca novo motorista excluindo o que atrasou
+   */
+  async buscarNovoMotorista(dados) {
+    try {
+      const result = await query(`
+        SELECT m.*, 
+          (6371 * acos(
+            cos(radians($1)) * cos(radians(m.latitude)) *
+            cos(radians(m.longitude) - radians($2)) +
+            sin(radians($1)) * sin(radians(m.latitude))
+          )) AS distancia_km
+        FROM motoristas m
+        WHERE m.ativo = true
+          AND m.online = true
+          AND m.em_corrida = false
+          AND m.id != $3
+          AND m.latitude IS NOT NULL
+          AND m.longitude IS NOT NULL
+        ORDER BY distancia_km ASC
+        LIMIT 1
+      `, [dados.origem_lat, dados.origem_lng, dados.motorista_id]);
+
+      return result.rows[0] || null;
+    } catch (error) {
+      console.error('Erro ao buscar novo motorista:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Cria nova corrida com prioridade
+   */
+  async criarCorridaPrioridade(dadosAntigos, novoMotorista) {
+    try {
+      // Calcular tempo estimado
+      const tempoEstimado = Math.ceil((novoMotorista.distancia_km || 1) * 3); // ~3 min/km
+
+      // 1. Criar nova corrida com flag de prioridade
+      const result = await query(`
+        INSERT INTO corridas (
+          cliente_id, motorista_id, origem_lat, origem_lng, origem_endereco,
+          destino_lat, destino_lng, destino_endereco, valor, status,
+          tempo_estimado, prioridade, corrida_anterior_id, tentativas_reatribuicao
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'aceita', $10, true, $11, $12)
+        RETURNING *
+      `, [
+        dadosAntigos.cliente_id,
+        novoMotorista.id,
+        dadosAntigos.origem_lat,
+        dadosAntigos.origem_lng,
+        dadosAntigos.origem_endereco,
+        dadosAntigos.destino_lat || null,
+        dadosAntigos.destino_lng || null,
+        dadosAntigos.destino_endereco || null,
+        dadosAntigos.valor || 13.00,
+        tempoEstimado,
+        dadosAntigos.id, // Referência à corrida anterior
+        (dadosAntigos.tentativas_reatribuicao || 0) + 1
+      ]);
+
+      const novaCorrida = result.rows[0];
+
+      // 2. Marcar motorista como em corrida
+      await query(`
+        UPDATE motoristas SET em_corrida = true, atualizado_em = NOW()
+        WHERE id = $1
+      `, [novoMotorista.id]);
+
+      // 3. Avisar NOVO motorista (com flag PRIORIDADE)
+      const mensagemNovoMotorista = `🚨 *CORRIDA PRIORIDADE*
+
+Cliente aguardando! O motorista anterior atrasou.
+
+📍 ${dadosAntigos.origem_endereco}
+👤 ${dadosAntigos.cliente_nome}
+
+Vá o mais rápido possível.`;
+
+      await this.whatsapp.enviarMensagem(novoMotorista.telefone, mensagemNovoMotorista);
+
+      // 4. Avisar cliente sobre o novo motorista
+      const mensagemCliente = `🔄 Trocamos seu motorista.
+
+*${novoMotorista.nome}* está a caminho
+${novoMotorista.veiculo || 'Veículo'} ${novoMotorista.cor || ''} - ${novoMotorista.placa || '---'}
+${tempoEstimado} minutos`;
+
+      await this.whatsapp.enviarMensagem(dadosAntigos.cliente_telefone, mensagemCliente);
+
+      // 5. Adicionar nova corrida ao monitoramento
+      this.adicionarMonitoramento({
+        ...novaCorrida,
+        cliente_telefone: dadosAntigos.cliente_telefone,
+        cliente_nome: dadosAntigos.cliente_nome,
+        motorista_nome: novoMotorista.nome,
+        motorista_telefone: novoMotorista.telefone,
+        aceito_em: new Date(),
+      });
+
+      console.log(`✅ Nova corrida #${novaCorrida.id} criada com PRIORIDADE para motorista ${novoMotorista.nome}`);
+
+    } catch (error) {
+      console.error('❌ Erro ao criar corrida prioridade:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Avisa cliente que não tem motorista disponível
+   */
+  async avisarSemMotoristaDisponivel(dados) {
+    // Mensagem CURTA conforme padrão Rebeca
+    const mensagem = `😔 Não encontrei outro motorista agora.
+
+Tenta de novo em alguns minutos?`;
+
+    try {
+      await this.whatsapp.enviarMensagem(dados.cliente_telefone, mensagem);
+    } catch (error) {
+      console.error('Erro ao avisar cliente:', error);
+    }
+  }
+
+  /**
+   * Atualiza posição do motorista e verifica se chegou
+   */
+  async atualizarPosicaoMotorista(motoristaId, lat, lng) {
+    for (const [corridaId, dados] of this.corridasMonitoradas) {
+      if (dados.motorista_id === motoristaId) {
+        // Calcular distância até o cliente
+        const distancia = this.calcularDistanciaMetros(
+          lat, lng,
+          dados.origem_lat, dados.origem_lng
+        );
+
+        // Se está muito perto, considerar que chegou
+        if (distancia <= CONFIG_TEMPO.DISTANCIA_CHEGADA) {
+          console.log(`✅ Motorista chegou na corrida #${corridaId}`);
+          await this.marcarMotoristaChegou(corridaId);
+        }
+      }
+    }
+  }
+
+  /**
+   * Calcula distância em metros entre dois pontos
+   */
+  calcularDistanciaMetros(lat1, lng1, lat2, lng2) {
+    const R = 6371000; // Raio da Terra em metros
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+              Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+              Math.sin(dLng/2) * Math.sin(dLng/2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return R * c;
+  }
+
+  /**
+   * Marca que motorista chegou
+   */
+  async marcarMotoristaChegou(corridaId) {
+    try {
+      await query(`
+        UPDATE corridas 
+        SET status = 'motorista_chegou', chegou_em = NOW()
+        WHERE id = $1
+      `, [corridaId]);
+
+      const dados = this.corridasMonitoradas.get(corridaId);
+      if (dados) {
+        // Avisar cliente
+        await this.whatsapp.enviarMensagem(
+          dados.cliente_telefone,
+          `🚗 Seu motorista ${dados.motorista_nome} chegou! Ele está te esperando.`
+        );
+      }
+
+      this.removerMonitoramento(corridaId);
+    } catch (error) {
+      console.error('Erro ao marcar chegada:', error);
+    }
+  }
+
+  // ========================================
+  // SISTEMA ANTI-FRAUDE INTEGRADO
+  // ========================================
+
+  /**
+   * Verifica anti-fraude periodicamente e notifica ADM
+   */
+  async verificarAntiFraude() {
+    console.log('🔍 Verificando anti-fraude...');
+    
+    try {
+      // Analisar todos os motoristas
+      const analises = await this.antiFraude.analisarTodos();
+      
+      // Filtrar apenas alertas críticos
+      const criticos = analises.filter(a => a.score < 50);
+      
+      if (criticos.length > 0) {
+        console.log(`⚠️ ${criticos.length} motoristas com alertas críticos`);
+        
+        // Notificar ADM via WhatsApp
+        await this.notificarADMAntiFraude(criticos);
+        
+        // Registrar alertas no banco
+        for (const analise of criticos) {
+          for (const alerta of analise.alertas) {
+            await this.antiFraude.registrarAlerta(analise.motorista.id, alerta);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Erro ao verificar anti-fraude:', error);
+    }
+  }
+
+  /**
+   * Notifica ADM sobre alertas de anti-fraude via WhatsApp (Rebeca)
+   */
+  async notificarADMAntiFraude(analisesCriticas) {
+    if (!this.whatsapp || !this.telefoneADM) {
+      console.log('⚠️ WhatsApp ou telefone ADM não configurado');
+      return;
+    }
+
+    // Limitar a 1 notificação por hora
+    const agora = Date.now();
+    if (this.ultimaNotificacaoAntiFraude && (agora - this.ultimaNotificacaoAntiFraude) < 3600000) {
+      return;
+    }
+    this.ultimaNotificacaoAntiFraude = agora;
+
+    // Montar mensagem
+    let mensagem = `🚨 *ALERTA ANTI-FRAUDE - REBECA*\n\n`;
+    mensagem += `Detectei ${analisesCriticas.length} motorista(s) com comportamento suspeito:\n`;
+
+    for (const analise of analisesCriticas.slice(0, 5)) { // Máximo 5 motoristas
+      const mot = analise.motorista;
+      mensagem += `\n👤 *${mot.nome}* (Score: ${analise.score}/100)\n`;
+      
+      // Mostrar até 2 alertas por motorista
+      for (const alerta of analise.alertas.slice(0, 2)) {
+        mensagem += `   └ ${alerta.titulo}\n`;
+      }
+      
+      mensagem += `   📊 Recomendação: ${analise.recomendacao.acao}\n`;
+    }
+
+    mensagem += `\n_Acesse o painel ADM > Anti-Fraude para mais detalhes._`;
+
+    try {
+      await this.whatsapp.enviarMensagem(this.telefoneADM, mensagem);
+      console.log('📢 ADM notificado sobre alertas anti-fraude');
+    } catch (error) {
+      console.error('Erro ao notificar ADM:', error);
+    }
+  }
+
+  /**
+   * Registra atraso no sistema anti-fraude
+   */
+  async registrarAtrasoAntiFraude(motoristaId, motoristaNome, corridaId) {
+    try {
+      // Registrar alerta
+      await this.antiFraude.registrarAlerta(motoristaId, {
+        tipo: 'atraso',
+        severidade: 'amarelo',
+        titulo: '⏰ Atraso em corrida',
+        descricao: `Não chegou no tempo estimado na corrida #${corridaId}`,
+        corrida_id: corridaId,
+      });
+
+      // Verificar se precisa notificar ADM (muitos atrasos)
+      const result = await query(`
+        SELECT qtd_atrasos FROM motoristas WHERE id = $1
+      `, [motoristaId]);
+
+      const atrasos = result.rows[0]?.qtd_atrasos || 0;
+
+      // Se tiver 3+ atrasos, notificar ADM imediatamente
+      if (atrasos >= 3 && this.whatsapp && this.telefoneADM) {
+        const mensagem = `⚠️ *REBECA - Alerta de Atraso*\n\n` +
+          `O motorista *${motoristaNome}* atrasou novamente!\n\n` +
+          `📊 Total de atrasos: ${atrasos}\n` +
+          `🔢 Corrida: #${corridaId}\n\n` +
+          `_Considere verificar no painel Anti-Fraude._`;
+
+        await this.whatsapp.enviarMensagem(this.telefoneADM, mensagem);
+        console.log(`📢 ADM alertado sobre atrasos de ${motoristaNome}`);
+      }
+    } catch (error) {
+      console.error('Erro ao registrar atraso no anti-fraude:', error);
+    }
+  }
+}
+
+module.exports = {
+  MonitoramentoCorridas,
+  CONFIG_TEMPO,
+  STATUS_CORRIDA,
+};

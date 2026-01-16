@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Rastreamento - Sua corrida está a caminho!</title>
+  
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    
+    :root {
+      --primary: #6366f1;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --bg: #f8fafc;
+      --card: #ffffff;
+      --text: #1e293b;
+      --text-muted: #64748b;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      max-width: 480px;
+      margin: 0 auto;
+    }
+    
+    /* Mapa */
+    #mapa {
+      width: 100%;
+      height: 55vh;
+      min-height: 300px;
+    }
+    
+    /* Header no mapa */
+    .mapa-header {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 1000;
+      background: linear-gradient(180deg, rgba(0,0,0,0.6) 0%, transparent 100%);
+      padding: 16px;
+      color: white;
+    }
+    
+    .mapa-header h1 {
+      font-size: 16px;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--success);
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-top: 8px;
+    }
+    
+    .status-badge.aguardando { background: var(--warning); }
+    .status-badge.chegou { background: var(--primary); }
+    
+    .pulse-dot {
+      width: 8px;
+      height: 8px;
+      background: white;
+      border-radius: 50%;
+      animation: pulse 1.5s infinite;
+    }
+    
+    @keyframes pulse {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(1.2); }
+    }
+    
+    /* Card de informações */
+    .info-card {
+      background: var(--card);
+      border-radius: 24px 24px 0 0;
+      margin-top: -24px;
+      position: relative;
+      z-index: 1001;
+      padding: 24px;
+      box-shadow: 0 -10px 40px rgba(0,0,0,0.1);
+    }
+    
+    .drag-indicator {
+      width: 40px;
+      height: 4px;
+      background: #e2e8f0;
+      border-radius: 2px;
+      margin: 0 auto 20px;
+    }
+    
+    /* Tempo estimado */
+    .tempo-container {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    
+    .tempo-valor {
+      font-size: 48px;
+      font-weight: 700;
+      color: var(--primary);
+      line-height: 1;
+    }
+    
+    .tempo-label {
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+    
+    .distancia {
+      display: inline-block;
+      background: #f1f5f9;
+      padding: 8px 16px;
+      border-radius: 20px;
+      font-size: 14px;
+      color: var(--text-muted);
+      margin-top: 12px;
+    }
+    
+    /* Motorista */
+    .motorista-card {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 16px;
+      background: #f8fafc;
+      border-radius: 16px;
+      margin-bottom: 16px;
+    }
+    
+    .motorista-foto {
+      width: 56px;
+      height: 56px;
+      background: linear-gradient(135deg, var(--primary), #a855f7);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+      color: white;
+      font-weight: 600;
+    }
+    
+    .motorista-info {
+      flex: 1;
+    }
+    
+    .motorista-nome {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    
+    .motorista-veiculo {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+    
+    .motorista-avaliacao {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 13px;
+      color: var(--warning);
+      margin-top: 4px;
+    }
+    
+    .placa {
+      background: #1e293b;
+      color: white;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 14px;
+      font-weight: 700;
+      font-family: monospace;
+    }
+    
+    /* Endereços */
+    .endereco-container {
+      margin-bottom: 20px;
+    }
+    
+    .endereco-item {
+      display: flex;
+      gap: 12px;
+      padding: 12px 0;
+    }
+    
+    .endereco-item + .endereco-item {
+      border-top: 1px dashed #e2e8f0;
+    }
+    
+    .endereco-icon {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+    
+    .endereco-icon.origem {
+      background: rgba(16, 185, 129, 0.2);
+      color: var(--success);
+    }
+    
+    .endereco-icon.destino {
+      background: rgba(239, 68, 68, 0.2);
+      color: var(--danger);
+    }
+    
+    .endereco-texto {
+      flex: 1;
+    }
+    
+    .endereco-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    
+    .endereco-valor {
+      font-size: 14px;
+      font-weight: 500;
+      margin-top: 2px;
+    }
+    
+    /* Botões de ação */
+    .acoes {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    
+    .btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 14px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: all 0.2s;
+    }
+    
+    .btn-whatsapp {
+      background: #25d366;
+      color: white;
+    }
+    
+    .btn-ligar {
+      background: var(--primary);
+      color: white;
+    }
+    
+    .btn:active {
+      transform: scale(0.98);
+    }
+    
+    /* Footer */
+    .footer {
+      text-align: center;
+      padding: 16px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    
+    .footer a {
+      color: var(--primary);
+      text-decoration: none;
+    }
+    
+    /* Loading */
+    .loading {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 9999;
+    }
+    
+    .loading.hidden { display: none; }
+    
+    .spinner {
+      width: 48px;
+      height: 48px;
+      border: 4px solid #e2e8f0;
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    .loading p {
+      margin-top: 16px;
+      color: var(--text-muted);
+    }
+    
+    /* Marcadores personalizados */
+    .marcador-motorista {
+      background: var(--primary);
+      border: 3px solid white;
+      border-radius: 50%;
+      width: 44px;
+      height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 22px;
+      box-shadow: 0 4px 15px rgba(99, 102, 241, 0.5);
+    }
+    
+    .marcador-cliente {
+      background: var(--success);
+      border: 3px solid white;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      box-shadow: 0 4px 15px rgba(16, 185, 129, 0.5);
+    }
+    
+    /* Popup do Leaflet */
+    .leaflet-popup-content-wrapper {
+      border-radius: 12px;
+    }
+    
+    .leaflet-popup-content {
+      margin: 12px;
+      font-family: inherit;
+    }
+  </style>
+</head>
+<body>
+  <!-- Loading -->
+  <div class="loading" id="loading">
+    <div class="spinner"></div>
+    <p>Carregando rastreamento...</p>
+  </div>
+
+  <!-- Mapa -->
+  <div id="mapa"></div>
+  
+  <!-- Header sobre o mapa -->
+  <div class="mapa-header">
+    <h1>🚗 Acompanhe sua corrida</h1>
+    <div class="status-badge" id="status-badge">
+      <div class="pulse-dot"></div>
+      <span id="status-texto">Motorista a caminho</span>
+    </div>
+  </div>
+  
+  <!-- Card de informações -->
+  <div class="info-card">
+    <div class="drag-indicator"></div>
+    
+    <!-- Tempo estimado -->
+    <div class="tempo-container">
+      <div class="tempo-valor" id="tempo-chegada">3</div>
+      <div class="tempo-label">minutos para chegar</div>
+      <div class="distancia" id="distancia">📍 1.2 km de distância</div>
+    </div>
+    
+    <!-- Motorista -->
+    <div class="motorista-card">
+      <div class="motorista-foto" id="motorista-inicial">JS</div>
+      <div class="motorista-info">
+        <div class="motorista-nome" id="motorista-nome">João Santos</div>
+        <div class="motorista-veiculo" id="motorista-veiculo">Toyota Corolla Prata</div>
+        <div class="motorista-avaliacao">⭐ <span id="motorista-nota">4.9</span></div>
+      </div>
+      <div class="placa" id="motorista-placa">ABC-1234</div>
+    </div>
+    
+    <!-- Endereços -->
+    <div class="endereco-container">
+      <div class="endereco-item">
+        <div class="endereco-icon origem">📍</div>
+        <div class="endereco-texto">
+          <div class="endereco-label">Buscar você em</div>
+          <div class="endereco-valor" id="endereco-origem">Rua das Flores, 123</div>
+        </div>
+      </div>
+      <div class="endereco-item">
+        <div class="endereco-icon destino">🏁</div>
+        <div class="endereco-texto">
+          <div class="endereco-label">Destino</div>
+          <div class="endereco-valor" id="endereco-destino">Shopping Center Lins</div>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Ações - Falar com REBECA (não direto com motorista) -->
+    <div class="acoes">
+      <button class="btn btn-whatsapp" onclick="falarComRebeca()">
+        💬 Falar com Rebeca
+      </button>
+      <button class="btn btn-ligar" onclick="ligarRebeca()">
+        📞 Ligar Central
+      </button>
+    </div>
+    
+    <p style="text-align: center; font-size: 12px; color: var(--text-muted); margin-top: 12px;">
+      🤖 A Rebeca cuida de tudo! Qualquer problema, fale com ela.
+    </p>
+  </div>
+  
+  <!-- Footer -->
+  <div class="footer">
+    Corrida #<span id="corrida-id">ABC123</span> • 
+    <a href="#">Precisa de ajuda?</a>
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  
+  <script>
+    // ==========================================
+    // CONFIGURAÇÕES
+    // ==========================================
+    let mapa = null;
+    let marcadorMotorista = null;
+    let marcadorCliente = null;
+    let rotaAtual = null;
+    let corridaId = null;
+    let dadosCorrida = null;
+    let atualizacaoInterval = null;
+    
+    // Coordenadas de Lins - SP (cidade base)
+    const LINS_CENTER = { lat: -21.6785, lng: -49.7500 };
+    
+    // Dados simulados (em produção viriam do servidor)
+    const DADOS_DEMO = {
+      corrida_id: 'ABC123',
+      status: 'em_andamento',
+      // REBECA - Central de atendimento (cliente fala com ela, não com motorista)
+      whatsapp_rebeca: '5514999990001',
+      telefone_rebeca: '5514999990001',
+      nome_frota: 'UBMAX Transportes',
+      motorista: {
+        id: 1,
+        nome: 'João Santos',
+        telefone: '5514999991234', // Cliente NÃO tem acesso direto
+        foto: null,
+        veiculo: 'Toyota Corolla Prata',
+        placa: 'ABC-1234',
+        avaliacao: 4.9,
+        lat: -21.6820,
+        lng: -49.7550
+      },
+      cliente: {
+        nome: 'Cliente',
+        lat: -21.6750,
+        lng: -49.7450
+      },
+      origem: {
+        endereco: 'Rua Floriano Peixoto, 1500 - Centro, Lins',
+        lat: -21.6750,
+        lng: -49.7450
+      },
+      destino: {
+        endereco: 'Shopping Lins - Av. Nicolau Zarvos',
+        lat: -21.6680,
+        lng: -49.7380
+      },
+      tempo_estimado: 4,
+      distancia_km: 1.5
+    };
+    
+    // ==========================================
+    // INICIALIZAÇÃO
+    // ==========================================
+    document.addEventListener('DOMContentLoaded', async () => {
+      // Pegar ID da corrida da URL
+      const pathParts = window.location.pathname.split('/');
+      corridaId = pathParts[pathParts.length - 1] || 'demo';
+      
+      // Carregar dados da corrida
+      await carregarDadosCorrida();
+      
+      // Inicializar mapa
+      inicializarMapa();
+      
+      // Esconder loading
+      document.getElementById('loading').classList.add('hidden');
+      
+      // Iniciar atualização em tempo real
+      iniciarAtualizacaoTempoReal();
+    });
+    
+    // ==========================================
+    // CARREGAR DADOS
+    // ==========================================
+    async function carregarDadosCorrida() {
+      try {
+        // Tentar buscar dados reais
+        const res = await fetch(`/api/corridas/${corridaId}/rastreamento`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success) {
+            dadosCorrida = data.data;
+            atualizarInterface();
+            return;
+          }
+        }
+      } catch (error) {
+        console.log('Usando dados demo');
+      }
+      
+      // Se não conseguir, usar dados demo
+      dadosCorrida = DADOS_DEMO;
+      
+      // Atualizar UI
+      atualizarInterface();
+    }
+    
+    function atualizarInterface() {
+      const d = dadosCorrida;
+      
+      // Motorista
+      document.getElementById('motorista-nome').textContent = d.motorista.nome;
+      document.getElementById('motorista-veiculo').textContent = d.motorista.veiculo;
+      document.getElementById('motorista-placa').textContent = d.motorista.placa;
+      document.getElementById('motorista-nota').textContent = d.motorista.avaliacao;
+      document.getElementById('motorista-inicial').textContent = d.motorista.nome.split(' ').map(n => n[0]).join('').substring(0, 2);
+      
+      // Endereços
+      document.getElementById('endereco-origem').textContent = d.origem.endereco;
+      document.getElementById('endereco-destino').textContent = d.destino.endereco;
+      
+      // Tempo e distância
+      document.getElementById('tempo-chegada').textContent = d.tempo_estimado;
+      document.getElementById('distancia').textContent = `📍 ${d.distancia_km} km de distância`;
+      
+      // ID da corrida
+      document.getElementById('corrida-id').textContent = d.corrida_id;
+      
+      // Status
+      atualizarStatus(d.status);
+    }
+    
+    function atualizarStatus(status) {
+      const badge = document.getElementById('status-badge');
+      const texto = document.getElementById('status-texto');
+      
+      badge.className = 'status-badge';
+      
+      switch(status) {
+        case 'aguardando':
+          badge.classList.add('aguardando');
+          texto.textContent = 'Aguardando motorista';
+          break;
+        case 'em_andamento':
+          texto.textContent = 'Motorista a caminho';
+          break;
+        case 'chegou':
+          badge.classList.add('chegou');
+          texto.textContent = '🎉 Motorista chegou!';
+          document.getElementById('tempo-chegada').textContent = '0';
+          document.getElementById('distancia').textContent = '📍 Motorista no local!';
+          break;
+        case 'em_viagem':
+          texto.textContent = 'Em viagem';
+          break;
+        default:
+          texto.textContent = 'Acompanhando...';
+      }
+    }
+    
+    // ==========================================
+    // MAPA
+    // ==========================================
+    function inicializarMapa() {
+      const d = dadosCorrida;
+      
+      // Criar mapa centrado entre motorista e cliente
+      const centerLat = (d.motorista.lat + d.cliente.lat) / 2;
+      const centerLng = (d.motorista.lng + d.cliente.lng) / 2;
+      
+      mapa = L.map('mapa', {
+        zoomControl: false,
+        attributionControl: false
+      }).setView([centerLat, centerLng], 15);
+      
+      // Tile layer (OpenStreetMap)
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19
+      }).addTo(mapa);
+      
+      // Controle de zoom no canto inferior direito
+      L.control.zoom({ position: 'bottomright' }).addTo(mapa);
+      
+      // Marcador do motorista
+      const iconMotorista = L.divIcon({
+        className: 'marcador-motorista-container',
+        html: '<div class="marcador-motorista">🚗</div>',
+        iconSize: [44, 44],
+        iconAnchor: [22, 22]
+      });
+      
+      marcadorMotorista = L.marker([d.motorista.lat, d.motorista.lng], { icon: iconMotorista })
+        .addTo(mapa)
+        .bindPopup(`<b>${d.motorista.nome}</b><br>${d.motorista.veiculo}<br><small>${d.motorista.placa}</small>`);
+      
+      // Marcador do cliente (local de busca)
+      const iconCliente = L.divIcon({
+        className: 'marcador-cliente-container',
+        html: '<div class="marcador-cliente">📍</div>',
+        iconSize: [40, 40],
+        iconAnchor: [20, 20]
+      });
+      
+      marcadorCliente = L.marker([d.cliente.lat, d.cliente.lng], { icon: iconCliente })
+        .addTo(mapa)
+        .bindPopup('<b>Seu local</b><br>O motorista está vindo até você');
+      
+      // Desenhar rota
+      desenharRota();
+      
+      // Ajustar zoom para mostrar ambos os pontos
+      const bounds = L.latLngBounds([
+        [d.motorista.lat, d.motorista.lng],
+        [d.cliente.lat, d.cliente.lng]
+      ]);
+      mapa.fitBounds(bounds, { padding: [60, 60] });
+    }
+    
+    // ==========================================
+    // ROTA
+    // ==========================================
+    async function desenharRota() {
+      const d = dadosCorrida;
+      
+      try {
+        // Buscar rota real via OSRM (serviço gratuito de rotas)
+        const url = `https://router.project-osrm.org/route/v1/driving/${d.motorista.lng},${d.motorista.lat};${d.cliente.lng},${d.cliente.lat}?overview=full&geometries=geojson`;
+        
+        const res = await fetch(url);
+        const data = await res.json();
+        
+        if (data.routes && data.routes.length > 0) {
+          const rota = data.routes[0];
+          const coordenadas = rota.geometry.coordinates.map(c => [c[1], c[0]]);
+          
+          // Remover rota anterior se existir
+          if (rotaAtual) {
+            mapa.removeLayer(rotaAtual);
+          }
+          
+          // Desenhar nova rota com gradiente
+          rotaAtual = L.polyline(coordenadas, {
+            color: '#6366f1',
+            weight: 6,
+            opacity: 0.8,
+            lineCap: 'round',
+            lineJoin: 'round'
+          }).addTo(mapa);
+          
+          // Atualizar tempo e distância reais
+          const duracaoMin = Math.ceil(rota.duration / 60);
+          const distanciaKm = (rota.distance / 1000).toFixed(1);
+          
+          document.getElementById('tempo-chegada').textContent = duracaoMin;
+          document.getElementById('distancia').textContent = `📍 ${distanciaKm} km de distância`;
+          
+          dadosCorrida.tempo_estimado = duracaoMin;
+          dadosCorrida.distancia_km = parseFloat(distanciaKm);
+        }
+      } catch (error) {
+        console.log('Erro ao buscar rota, usando linha simples:', error);
+        
+        // Rota simples (linha reta) se OSRM falhar
+        if (rotaAtual) {
+          mapa.removeLayer(rotaAtual);
+        }
+        
+        rotaAtual = L.polyline([
+          [d.motorista.lat, d.motorista.lng],
+          [d.cliente.lat, d.cliente.lng]
+        ], {
+          color: '#6366f1',
+          weight: 5,
+          opacity: 0.7,
+          dashArray: '10, 10'
+        }).addTo(mapa);
+      }
+    }
+    
+    // ==========================================
+    // ATUALIZAÇÃO EM TEMPO REAL
+    // ==========================================
+    function iniciarAtualizacaoTempoReal() {
+      // Atualizar a cada 5 segundos
+      atualizacaoInterval = setInterval(async () => {
+        await atualizarPosicaoMotorista();
+      }, 5000);
+      
+      // Simular movimento do motorista (para demo)
+      simularMovimento();
+    }
+    
+    async function atualizarPosicaoMotorista() {
+      try {
+        const res = await fetch(`/api/corridas/${corridaId}/posicao`);
+        if (res.ok) {
+          const data = await res.json();
+          if (data.success && data.data.lat && data.data.lng) {
+            // Atualizar posição no mapa
+            marcadorMotorista.setLatLng([data.data.lat, data.data.lng]);
+            dadosCorrida.motorista.lat = data.data.lat;
+            dadosCorrida.motorista.lng = data.data.lng;
+            
+            // Recalcular rota
+            desenharRota();
+            
+            // Verificar se chegou
+            if (data.data.status === 'chegou') {
+              atualizarStatus('chegou');
+              clearInterval(atualizacaoInterval);
+            }
+          }
+        }
+      } catch (error) {
+        // Silencioso - usar simulação
+      }
+    }
+    
+    // Simulação de movimento para demonstração
+    function simularMovimento() {
+      const d = dadosCorrida;
+      const totalSteps = 40;
+      const deltaLat = (d.cliente.lat - d.motorista.lat) / totalSteps;
+      const deltaLng = (d.cliente.lng - d.motorista.lng) / totalSteps;
+      let steps = 0;
+      
+      const moveInterval = setInterval(() => {
+        steps++;
+        
+        if (steps >= totalSteps) {
+          clearInterval(moveInterval);
+          atualizarStatus('chegou');
+          
+          // Vibrar se suportado
+          if (navigator.vibrate) {
+            navigator.vibrate([200, 100, 200]);
+          }
+          return;
+        }
+        
+        // Mover motorista com pequena variação (simula curvas)
+        d.motorista.lat += deltaLat + (Math.random() - 0.5) * 0.0001;
+        d.motorista.lng += deltaLng + (Math.random() - 0.5) * 0.0001;
+        
+        // Atualizar marcador suavemente
+        marcadorMotorista.setLatLng([d.motorista.lat, d.motorista.lng]);
+        
+        // Atualizar tempo estimado
+        const tempoRestante = Math.max(1, Math.ceil((totalSteps - steps) / 10));
+        document.getElementById('tempo-chegada').textContent = tempoRestante;
+        
+        // Recalcular distância
+        const distancia = calcularDistancia(
+          d.motorista.lat, d.motorista.lng,
+          d.cliente.lat, d.cliente.lng
+        );
+        document.getElementById('distancia').textContent = `📍 ${distancia.toFixed(1)} km de distância`;
+        
+        // Redesenhar rota a cada 8 passos
+        if (steps % 8 === 0) {
+          desenharRota();
+        }
+      }, 1500);
+    }
+    
+    function calcularDistancia(lat1, lng1, lat2, lng2) {
+      const R = 6371; // Raio da Terra em km
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLng = (lng2 - lng1) * Math.PI / 180;
+      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                Math.sin(dLng/2) * Math.sin(dLng/2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+      return R * c;
+    }
+    
+    // ==========================================
+    // AÇÕES - FALAR COM REBECA (não com motorista)
+    // ==========================================
+    function falarComRebeca() {
+      const d = dadosCorrida;
+      const whatsappRebeca = d.whatsapp_rebeca || '5514999990001'; // WhatsApp da Rebeca/Frota
+      const msg = `Olá Rebeca! 🚗\n\nEstou acompanhando minha corrida #${d.corrida_id}.\n\nMotorista: ${d.motorista.nome}\nPlaca: ${d.motorista.placa}`;
+      window.open(`https://wa.me/${whatsappRebeca}?text=${encodeURIComponent(msg)}`, '_blank');
+    }
+    
+    function ligarRebeca() {
+      const d = dadosCorrida;
+      const telefoneRebeca = d.telefone_rebeca || '5514999990001'; // Telefone da central
+      window.location.href = `tel:+${telefoneRebeca}`;
+    }
+    
+    // Cleanup ao sair da página
+    window.addEventListener('beforeunload', () => {
+      if (atualizacaoInterval) {
+        clearInterval(atualizacaoInterval);
+      }
+    });
+  </script>
+</body>
+</html>
