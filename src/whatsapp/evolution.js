@@ -157,42 +157,56 @@ class EvolutionClient extends EventEmitter {
 
   /**
    * Configura WebSocket para eventos em tempo real
+   * SÓ conecta se Evolution API estiver configurada
    */
   async configurarWebSocket() {
+    // NÃO conectar WebSocket se Evolution API não estiver configurada
+    if (!this.baseURL || this.baseURL === 'http://localhost:8080' || !this.apiKey) {
+      console.log('⚠️ Evolution API não configurada - WebSocket desativado');
+      console.log('   Configure EVOLUTION_API_URL e EVOLUTION_API_KEY no .env');
+      return;
+    }
+
     const wsURL = this.baseURL.replace('http', 'ws') + `/ws/${this.instanceName}`;
     
     console.log('🔌 Conectando WebSocket...');
+    console.log(`   URL: ${wsURL}`);
     
-    this.ws = new WebSocket(wsURL, {
-      headers: {
-        'apikey': this.apiKey
-      }
-    });
+    try {
+      this.ws = new WebSocket(wsURL, {
+        headers: {
+          'apikey': this.apiKey
+        }
+      });
 
-    this.ws.on('open', () => {
-      console.log('✅ WebSocket conectado!');
-    });
+      this.ws.on('open', () => {
+        console.log('✅ WebSocket conectado!');
+      });
 
-    this.ws.on('message', (data) => {
-      try {
-        const event = JSON.parse(data.toString());
-        this.processarEvento(event);
-      } catch (error) {
-        console.error('Erro ao processar evento WS:', error);
-      }
-    });
+      this.ws.on('message', (data) => {
+        try {
+          const event = JSON.parse(data.toString());
+          this.processarEvento(event);
+        } catch (error) {
+          console.error('Erro ao processar evento WS:', error);
+        }
+      });
 
-    this.ws.on('close', () => {
-      console.log('⚠️ WebSocket desconectado');
-      this.isConnected = false;
-      
-      // Reconectar após 5 segundos
-      setTimeout(() => this.configurarWebSocket(), 5000);
-    });
+      this.ws.on('close', () => {
+        console.log('⚠️ WebSocket desconectado');
+        this.isConnected = false;
+        
+        // Reconectar após 10 segundos (aumentado para evitar spam)
+        setTimeout(() => this.configurarWebSocket(), 10000);
+      });
 
-    this.ws.on('error', (error) => {
-      console.error('❌ Erro WebSocket:', error.message);
-    });
+      this.ws.on('error', (error) => {
+        console.error('❌ Erro WebSocket:', error.message);
+        // Não tentar reconectar imediatamente em caso de erro
+      });
+    } catch (error) {
+      console.error('❌ Falha ao criar WebSocket:', error.message);
+    }
   }
 
   /**
@@ -689,4 +703,4 @@ Precisa de um carro? Me manda o endereço.`;
   }
 }
 
-module.exports = EvolutionClient;
+module.exports = EvolutionAPI;

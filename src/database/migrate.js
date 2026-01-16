@@ -3,7 +3,7 @@
 // MULTI-TENANT: Cada empresa tem dados isolados
 // ========================================
 
-const { pool } = require('../config/database');
+const { pool } = require('./connection');
 
 const migrations = `
 
@@ -468,7 +468,7 @@ const runMigrations = async () => {
     await pool.query(migrations);
     console.log('✅ Migrations executadas com sucesso!');
   } catch (error) {
-    console.error('❌ Erro nas migrations:', error.message);
+    console.error('❌ Erro nas migrations:', error);
     throw error;
   }
 };
@@ -476,14 +476,8 @@ const runMigrations = async () => {
 // Executar se chamado diretamente
 if (require.main === module) {
   runMigrations()
-    .then(() => {
-      console.log('✅ Processo concluído!');
-      process.exit(0);
-    })
-    .catch((err) => {
-      console.error('❌ Falha nas migrations:', err);
-      process.exit(1);
-    });
+    .then(() => process.exit(0))
+    .catch(() => process.exit(1));
 }
 
 module.exports = { runMigrations };

@@ -28,7 +28,7 @@ const verificarMaster = async (req, res, next) => {
 
   try {
     const result = await query(
-      'SELECT * FROM usuarios_master WHERE token = $1 AND ativo = true',
+      'SELECT * FROM usuarios_master WHERE token_sessao = $1 AND ativo = true',
       [token]
     );
 
@@ -45,6 +45,8 @@ const verificarMaster = async (req, res, next) => {
 
 // ========================================
 // LOGIN MASTER
+// Email: adautoaraujo414@gmail.com
+// Senha: Ci851213@
 // ========================================
 router.post('/login', async (req, res) => {
   try {
@@ -70,9 +72,11 @@ router.post('/login', async (req, res) => {
     // Gerar novo token
     const novoToken = crypto.randomBytes(32).toString('hex');
     await query(
-      'UPDATE usuarios_master SET token = $1, ultimo_acesso = CURRENT_TIMESTAMP WHERE id = $2',
+      'UPDATE usuarios_master SET token_sessao = $1 WHERE id = $2',
       [novoToken, usuario.id]
     );
+
+    console.log(`✅ Login MASTER: ${email}`);
 
     res.json({
       success: true,
@@ -85,6 +89,233 @@ router.post('/login', async (req, res) => {
     });
   } catch (error) {
     console.error('Erro login master:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ========================================
+// CALCULAR VALOR ASSINATURA POR EMPRESA
+// Até 40 motoristas: R$ 49,90 cada
+// Acima de 40: R$ 41,90 cada
+// ========================================
+router.get('/empresas/:id/calcular-assinatura', verificarMaster, async (req, res) => {
+  try {
+    const { calcularValorAssinatura } = require('../database/seed');
+    const resultado = await calcularValorAssinatura(req.params.id);
+    res.json({ success: true, data: resultado });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ========================================
+// WHATSAPP / QR CODE POR EMPRESA
+// Cada empresa tem sua própria instância
+// ========================================
+
+// Gerar QR Code para empresa conectar WhatsApp
+router.post('/empresas/:id/whatsapp/conectar', verificarMaster, async (req, res) => {
+  try {
+    const empresaId = req.params.id;
+    const { telefone_rebeca } = req.body;
+    
+    // Buscar empresa
+    const empresa = await query('SELECT * FROM empresas WHERE id = $1', [empresaId]);
+    if (empresa.rows.length === 0) {
+      return res.status(404).json({ success: false, error: 'Empresa não encontrada' });
+    }
+    
+    // Nome da instância = rebeca_empresaId
+    const instanciaNome = `rebeca_${empresaId}`;
+    
+    // Atualizar empresa com o telefone da Rebeca
+    if (telefone_rebeca) {
+      await query(
+        'UPDATE empresas SET whatsapp_rebeca = $1, whatsapp_instancia = $2 WHERE id = $3',
+        [telefone_rebeca, instanciaNome, empresaId]
+      );
+    }
+    
+    // Verificar se Evolution API está configurada
+    const evolutionUrl = process.env.EVOLUTION_API_URL;
+    const evolutionKey = process.env.EVOLUTION_API_KEY;
+    
+    if (!evolutionUrl || !evolutionKey) {
+      return res.json({
+        success: true,
+        data: {
+          empresa_id: empresaId,
+          instancia: instanciaNome,
+          status: 'aguardando_configuracao',
+          mensagem: 'Configure EVOLUTION_API_URL e EVOLUTION_API_KEY no servidor',
+          qrcode: null
+        }
+      });
+    }
+    
+    // Tentar criar instância na Evolution API
+    const axios = require('axios');
+    
+    try {
+      // 1. Criar instância
+      await axios.post(`${evolutionUrl}/instance/create`, {
+        instanceName: instanciaNome,
+        qrcode: true,
+        integration: 'WHATSAPP-BAILEYS'
+      }, {
+        headers: { 'apikey': evolutionKey }
+      }).catch(() => {}); // Ignora se já existe
+      
+      // 2. Gerar QR Code
+      const qrResponse = await axios.get(`${evolutionUrl}/instance/connect/${instanciaNome}`, {
+        headers: { 'apikey': evolutionKey }
+      });
+      
+      const qrCode = qrResponse.data?.base64 || qrResponse.data?.qrcode?.base64;
+      
+      if (qrCode) {
+        return res.json({
+          success: true,
+          data: {
+            empresa_id: empresaId,
+            instancia: instanciaNome,
+            status: 'aguardando_leitura',
+            qrcode: qrCode,
+            mensagem: 'Escaneie o QR Code com o WhatsApp da empresa'
+          }
+        });
+      }
+      
+      // 3. Verificar se já está conectado
+      const statusResponse = await axios.get(`${evolutionUrl}/instance/connectionState/${instanciaNome}`, {
+        headers: { 'apikey': evolutionKey }
+      });
+      
+      if (statusResponse.data?.instance?.state === 'open') {
+        await query(
+          'UPDATE empresas SET whatsapp_conectado = true, whatsapp_ultima_conexao = CURRENT_TIMESTAMP WHERE id = $1',
+          [empresaId]
+        );
+        
+        return res.json({
+          success: true,
+          data: {
+            empresa_id: empresaId,
+            instancia: instanciaNome,
+            status: 'conectado',
+            mensagem: 'WhatsApp já está conectado!'
+          }
+        });
+      }
+      
+    } catch (apiError) {
+      console.error('Erro Evolution API:', apiError.message);
+    }
+    
+    res.json({
+      success: true,
+      data: {
+        empresa_id: empresaId,
+        instancia: instanciaNome,
+        status: 'erro',
+        mensagem: 'Não foi possível gerar QR Code. Verifique a Evolution API.'
+      }
+    });
+    
+  } catch (error) {
+    console.error('Erro conectar WhatsApp:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Verificar status do WhatsApp da empresa
+router.get('/empresas/:id/whatsapp/status', verificarMaster, async (req, res) => {
+  try {
+    const empresaId = req.params.id;
+    const instanciaNome = `rebeca_${empresaId}`;
+    
+    const evolutionUrl = process.env.EVOLUTION_API_URL;
+    const evolutionKey = process.env.EVOLUTION_API_KEY;
+    
+    if (!evolutionUrl || !evolutionKey) {
+      return res.json({
+        success: true,
+        data: {
+          conectado: false,
+          status: 'nao_configurado',
+          mensagem: 'Evolution API não configurada'
+        }
+      });
+    }
+    
+    const axios = require('axios');
+    
+    try {
+      const response = await axios.get(`${evolutionUrl}/instance/connectionState/${instanciaNome}`, {
+        headers: { 'apikey': evolutionKey }
+      });
+      
+      const estado = response.data?.instance?.state || 'close';
+      const conectado = estado === 'open';
+      
+      // Atualizar no banco
+      await query(
+        'UPDATE empresas SET whatsapp_conectado = $1, whatsapp_ultima_conexao = CASE WHEN $1 THEN CURRENT_TIMESTAMP ELSE whatsapp_ultima_conexao END WHERE id = $2',
+        [conectado, empresaId]
+      );
+      
+      return res.json({
+        success: true,
+        data: {
+          conectado,
+          status: estado,
+          instancia: instanciaNome
+        }
+      });
+      
+    } catch (apiError) {
+      return res.json({
+        success: true,
+        data: {
+          conectado: false,
+          status: 'erro',
+          mensagem: apiError.message
+        }
+      });
+    }
+    
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Desconectar WhatsApp da empresa
+router.post('/empresas/:id/whatsapp/desconectar', verificarMaster, async (req, res) => {
+  try {
+    const empresaId = req.params.id;
+    const instanciaNome = `rebeca_${empresaId}`;
+    
+    const evolutionUrl = process.env.EVOLUTION_API_URL;
+    const evolutionKey = process.env.EVOLUTION_API_KEY;
+    
+    if (evolutionUrl && evolutionKey) {
+      const axios = require('axios');
+      await axios.delete(`${evolutionUrl}/instance/logout/${instanciaNome}`, {
+        headers: { 'apikey': evolutionKey }
+      }).catch(() => {});
+    }
+    
+    await query(
+      'UPDATE empresas SET whatsapp_conectado = false WHERE id = $1',
+      [empresaId]
+    );
+    
+    res.json({
+      success: true,
+      mensagem: 'WhatsApp desconectado'
+    });
+    
+  } catch (error) {
     res.status(500).json({ success: false, error: error.message });
   }
 });

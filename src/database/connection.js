@@ -6,11 +6,16 @@
 const { Pool } = require('pg');
 const config = require('../config');
 
-// Railway usa DATABASE_URL, outros usam variáveis separadas
+// Railway/Render usa DATABASE_URL, outros usam variáveis separadas
+// CORRIGIDO: Força IPv4 para evitar erro ENETUNREACH em IPv6
 const pool = process.env.DATABASE_URL 
   ? new Pool({
       connectionString: process.env.DATABASE_URL,
-      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+      ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+      family: 4,  // FORÇA IPv4
+      connectionTimeoutMillis: 10000,
+      idleTimeoutMillis: 30000,
+      max: 20
     })
   : new Pool({
       host: config.database.host,
@@ -18,6 +23,7 @@ const pool = process.env.DATABASE_URL
       database: config.database.name,
       user: config.database.user,
       password: config.database.password,
+      family: 4
     });
 
 // Testar conexão
