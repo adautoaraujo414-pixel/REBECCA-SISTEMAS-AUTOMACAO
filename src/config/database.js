@@ -1,110 +1,67 @@
 /**
  * Configuração do Banco de Dados PostgreSQL
- * Sistema REBECA - Central de Corridas via WhatsApp
+ * Sistema REBECA - FORÇA IPv4
  */
 
 const { Pool } = require('pg');
 
-// Configuração do Pool de conexões
+// Configuração FORÇANDO IPv4
 const poolConfig = {
-  // String de conexão do banco de dados
-  connectionString: process.env.DATABASE_URL,
+  host: process.env.DB_HOST || 'db.teipjzzxcghtnxnzlywh.supabase.co',
+  port: parseInt(process.env.DB_PORT) || 5432,
+  database: process.env.DB_NAME || 'postgres',
+  user: process.env.DB_USER || 'postgres',
+  password: process.env.DB_PASSWORD,
   
-  // SSL para produção (Render, Railway, etc)
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-  
-  // IMPORTANTE: Força uso de IPv4 para evitar erro ENETUNREACH
+  // FORÇA IPv4 - CRÍTICO!
   family: 4,
   
-  // Configurações do pool de conexões
-  max: 20,                        // Máximo de conexões simultâneas
-  min: 2,                         // Mínimo de conexões mantidas
-  idleTimeoutMillis: 30000,       // Tempo máximo de inatividade (30 segundos)
-  connectionTimeoutMillis: 10000, // Timeout para conectar (10 segundos)
-  acquireTimeoutMillis: 30000,    // Timeout para adquirir conexão do pool
+  // SSL obrigatório
+  ssl: {
+    rejectUnauthorized: false
+  },
+  
+  // Pool config
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000
 };
 
-// Criar o pool de conexões
 const pool = new Pool(poolConfig);
 
-// Evento de erro no pool
-pool.on('error', (err, client) => {
-  console.error('❌ Erro inesperado no cliente do pool:', err);
+// Testes de conexão
+pool.on('connect', () => {
+  console.log('✅ Conectado ao PostgreSQL via IPv4');
 });
 
-// Evento de conexão bem-sucedida
-pool.on('connect', (client) => {
-  console.log('✅ Nova conexão estabelecida com o banco de dados');
+pool.on('error', (err) => {
+  console.error('❌ Erro no pool:', err.message);
 });
 
-// Função para testar a conexão
-async function testarConexao() {
+async function testConnection() {
   try {
     const client = await pool.connect();
     const result = await client.query('SELECT NOW()');
-    console.log('✅ Conexão com banco de dados OK:', result.rows[0].now);
+    console.log('✅ Conexão OK:', result.rows[0].now);
     client.release();
     return true;
-  } catch (error) {
-    console.error('❌ Erro ao conectar com banco de dados:', error.message);
+  } catch (err) {
+    console.error('❌ Erro ao conectar:', err.message);
     return false;
   }
 }
 
-// Função para executar queries com retry
-async function query(text, params, retries = 3) {
-  for (let i = 0; i < retries; i++) {
-    try {
-      const result = await pool.query(text, params);
-      return result;
-    } catch (error) {
-      console.error(`❌ Erro na query (tentativa ${i + 1}/${retries}):`, error.message);
-      if (i === retries - 1) throw error;
-      // Aguarda antes de tentar novamente
-      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1)));
-    }
-  }
+async function query(text, params) {
+  return pool.query(text, params);
 }
 
-// Função para obter um cliente do pool
 async function getClient() {
-  const client = await pool.connect();
-  const originalQuery = client.query.bind(client);
-  const originalRelease = client.release.bind(client);
-  
-  // Timeout para liberar cliente automaticamente
-  const timeout = setTimeout(() => {
-    console.error('⚠️ Cliente do banco não foi liberado em 30 segundos!');
-    client.release();
-  }, 30000);
-  
-  client.query = (...args) => {
-    return originalQuery(...args);
-  };
-  
-  client.release = () => {
-    clearTimeout(timeout);
-    return originalRelease();
-  };
-  
-  return client;
+  return pool.connect();
 }
 
-// Função para fechar o pool (graceful shutdown)
-async function fecharPool() {
-  try {
-    await pool.end();
-    console.log('✅ Pool de conexões fechado com sucesso');
-  } catch (error) {
-    console.error('❌ Erro ao fechar pool:', error.message);
-  }
-}
-
-// Exportar o pool e funções utilitárias
 module.exports = {
   pool,
   query,
   getClient,
-  testarConexao,
-  fecharPool
+  testConnection
 };
