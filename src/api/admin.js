@@ -4003,6 +4003,194 @@ router.get('/sistema/versao', async (req, res) => {
   }
 });
 
+// ========================================
+// WHATSAPP - CONEXÃO VIA EVOLUTION API
+// ========================================
+
+/**
+ * POST /api/admin/whatsapp/conectar
+ * Gera QR Code para conectar WhatsApp
+ */
+router.post('/whatsapp/conectar', async (req, res) => {
+  try {
+    const empresa_id = req.body.empresa_id || req.headers['x-empresa-id'] || 1;
+    
+    const evolutionUrl = process.env.EVOLUTION_API_URL;
+    const evolutionKey = process.env.EVOLUTION_API_KEY;
+    
+    if (!evolutionUrl || !evolutionKey) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Evolution API não configurada. Configure EVOLUTION_API_URL e EVOLUTION_API_KEY no Railway.' 
+      });
+    }
+    
+    const instanceName = `rebeca_${empresa_id}`;
+    
+    // 1. Criar instância se não existir
+    try {
+      await fetch(`${evolutionUrl}/instance/create`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': evolutionKey
+        },
+        body: JSON.stringify({
+          instanceName: instanceName,
+          qrcode: true,
+          integration: 'WHATSAPP-BAILEYS'
+        })
+      });
+    } catch (e) {
+      // Instância pode já existir, continuar
+    }
+    
+    // 2. Conectar e obter QR Code
+    const connectResponse = await fetch(`${evolutionUrl}/instance/connect/${instanceName}`, {
+      method: 'GET',
+      headers: {
+        'apikey': evolutionKey
+      }
+    });
+    
+    const connectData = await connectResponse.json();
+    
+    if (connectData.base64) {
+      // QR Code gerado
+      res.json({
+        success: true,
+        qrcode: connectData.base64,
+        instance: instanceName
+      });
+      
+    } else if (connectData.instance?.state === 'open') {
+      // Já está conectado
+      res.json({
+        success: true,
+        connected: true,
+        phone: connectData.instance?.owner || null
+      });
+      
+    } else {
+      res.json({
+        success: false,
+        error: 'Não foi possível gerar QR Code',
+        data: connectData
+      });
+    }
+    
+  } catch (error) {
+    console.error('Erro ao conectar WhatsApp:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+/**
+ * GET /api/admin/whatsapp/status
+ * Verifica status da conexão
+ */
+router.get('/whatsapp/status', async (req, res) => {
+  try {
+    const empresa_id = req.query.empresa_id || req.headers['x-empresa-id'] || 1;
+    
+    const evolutionUrl = process.env.EVOLUTION_API_URL;
+    const evolutionKey = process.env.EVOLUTION_API_KEY;
+    
+    if (!evolutionUrl || !evolutionKey) {
+      return res.json({ 
+        success: true, 
+        connected: false,
+        status: 'not_configured'
+      });
+    }
+    
+    const instanceName = `rebeca_${empresa_id}`;
+    
+    const response = await fetch(`${evolutionUrl}/instance/connectionState/${instanceName}`, {
+      headers: {
+        'apikey': evolutionKey
+      }
+    });
+    
+    const data = await response.json();
+    
+    if (data.instance?.state === 'open') {
+      // Atualizar status no banco
+      await query(`
+        UPDATE empresas 
+        SET whatsapp_conectado = true, whatsapp_instancia = $1, whatsapp_ultima_conexao = NOW()
+        WHERE id = $2
+      `, [instanceName, empresa_id]);
+      
+      res.json({
+        success: true,
+        connected: true,
+        status: 'open',
+        phone: data.instance?.owner || null
+      });
+      
+    } else {
+      res.json({
+        success: true,
+        connected: false,
+        status: data.instance?.state || 'disconnected'
+      });
+    }
+    
+  } catch (error) {
+    console.error('Erro ao verificar status:', error);
+    res.json({ 
+      success: true, 
+      connected: false,
+      status: 'error',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/admin/whatsapp/desconectar
+ * Desconecta WhatsApp
+ */
+router.post('/whatsapp/desconectar', async (req, res) => {
+  try {
+    const empresa_id = req.body.empresa_id || req.headers['x-empresa-id'] || 1;
+    
+    const evolutionUrl = process.env.EVOLUTION_API_URL;
+    const evolutionKey = process.env.EVOLUTION_API_KEY;
+    
+    if (!evolutionUrl || !evolutionKey) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Evolution API não configurada' 
+      });
+    }
+    
+    const instanceName = `rebeca_${empresa_id}`;
+    
+    // Fazer logout
+    await fetch(`${evolutionUrl}/instance/logout/${instanceName}`, {
+      method: 'DELETE',
+      headers: {
+        'apikey': evolutionKey
+      }
+    });
+    
+    // Atualizar banco
+    await query(`
+      UPDATE empresas 
+      SET whatsapp_conectado = false
+      WHERE id = $1
+    `, [empresa_id]);
+    
+    res.json({ success: true, message: 'WhatsApp desconectado' });
+    
+  } catch (error) {
+    console.error('Erro ao desconectar:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 module.exports = router;
 
 // ========================================
