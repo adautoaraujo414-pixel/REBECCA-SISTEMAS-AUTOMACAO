@@ -703,4 +703,4 @@ Precisa de um carro? Me manda o endereço.`;
   }
 }
 
-module.exports = EvolutionAPI;
+module.exports = EvolutionClient;
