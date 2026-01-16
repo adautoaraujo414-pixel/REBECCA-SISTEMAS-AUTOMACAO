@@ -56,10 +56,10 @@ class Rebeca {
       // 4. Criar fluxo de conversa
       this.fluxo = new FluxoConversa(this.whatsapp);
 
-      // 5. Configurar handler de mensagens
-      this.whatsapp.onMessage(async (msg) => {
-        await this.fluxo.processar(msg);
-      });
+   // MENSAGENS AGORA CHEGAM VIA WEBHOOK
+// this.whatsapp.onMessage(async (msg) => {
+//   await this.processarMensagem(msg);
+// });
 
       // 6. Iniciar servidor HTTP (Painel Admin)
       await this.server.iniciar();
