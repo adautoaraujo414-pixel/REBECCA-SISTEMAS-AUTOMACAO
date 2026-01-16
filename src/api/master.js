@@ -2735,3 +2735,104 @@ router.post('/manutencao/escopo', async (req, res) => {
   }
 });
 
+// ========================================
+// CADASTRO PÚBLICO DE EMPRESA (TRIAL 5 DIAS)
+// Endpoint público - não requer autenticação
+// ========================================
+router.post('/empresas/cadastrar', async (req, res) => {
+  try {
+    const { nome, responsavel, email, telefone, cidade, qtd_motoristas, cnpj, plano } = req.body;
+
+    console.log('📝 Nova solicitação de cadastro:', { nome, email, cidade, plano });
+
+    // Validações
+    if (!nome || !responsavel || !email || !telefone || !cidade) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Preencha todos os campos obrigatórios' 
+      });
+    }
+
+    // Verificar se email já existe
+    const emailExiste = await query(
+      'SELECT id FROM empresas WHERE email = $1 OR telefone_adm = $2',
+      [email, telefone]
+    );
+
+    if (emailExiste.rows.length > 0) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Email ou telefone já cadastrado' 
+      });
+    }
+
+    // Gerar senha provisória
+    const senhaProvisoria = Math.random().toString(36).slice(-8);
+    const senhaHash = crypto.createHash('sha256').update(senhaProvisoria).digest('hex');
+
+    // Gerar token API
+    const tokenApi = crypto.randomBytes(32).toString('hex');
+
+    // Calcular data fim do trial (5 dias)
+    const dataTrialFim = new Date();
+    dataTrialFim.setDate(dataTrialFim.getDate() + 5);
+
+    // Criar empresa
+    const result = await query(`
+      INSERT INTO empresas (
+        nome, nome_dono, email, telefone_adm, cidade, cnpj, 
+        plano, token_api, status, data_trial_fim, ativo, criado_em
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'trial', $9, true, CURRENT_TIMESTAMP)
+      RETURNING *
+    `, [nome, responsavel, email, telefone, cidade, cnpj || null, plano || 'basico', tokenApi, dataTrialFim]);
+
+    const empresa = result.rows[0];
+
+    // Criar admin da empresa
+    await query(`
+      INSERT INTO admins (empresa_id, nome, email, telefone, senha_hash, ativo, primeiro_acesso)
+      VALUES ($1, $2, $3, $4, $5, true, true)
+    `, [empresa.id, responsavel, email, telefone, senhaHash]);
+
+    console.log(`✅ Empresa criada: ${nome} (ID: ${empresa.id}) - Trial até ${dataTrialFim.toLocaleDateString()}`);
+
+    res.json({
+      success: true,
+      data: {
+        empresa_id: empresa.id,
+        nome: empresa.nome,
+        email: email,
+        senha_provisoria: senhaProvisoria,
+        plano: plano,
+        trial_fim: dataTrialFim.toISOString(),
+        mensagem: 'Empresa cadastrada com sucesso! Trial de 5 dias ativado.'
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Erro cadastro empresa:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ========================================
+// LISTAR EMPRESAS PARA MASTER
+// ========================================
+router.get('/empresas/listar', verificarMaster, async (req, res) => {
+  try {
+    const result = await query(`
+      SELECT 
+        e.*,
+        (SELECT COUNT(*) FROM motoristas m WHERE m.empresa_id = e.id AND m.ativo = true) as total_motoristas,
+        (SELECT COUNT(*) FROM corridas c WHERE c.empresa_id = e.id) as total_corridas
+      FROM empresas e
+      ORDER BY e.criado_em DESC
+    `);
+
+    res.json({ success: true, data: result.rows });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+module.exports = router;

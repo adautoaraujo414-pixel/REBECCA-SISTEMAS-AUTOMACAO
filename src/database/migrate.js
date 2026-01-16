@@ -42,6 +42,8 @@ CREATE TABLE IF NOT EXISTS empresas (
   email VARCHAR(100),
   cidade VARCHAR(100),
   ativo BOOLEAN DEFAULT TRUE,
+  status VARCHAR(20) DEFAULT 'trial',
+  data_trial_fim TIMESTAMP,
   plano VARCHAR(20) DEFAULT 'basico',
   token_api VARCHAR(64) UNIQUE,
   msg_corrida_finalizada TEXT,
@@ -49,6 +51,17 @@ CREATE TABLE IF NOT EXISTS empresas (
   criado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   atualizado_em TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Adicionar colunas se não existirem (para bancos já criados)
+DO $$ 
+BEGIN 
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresas' AND column_name='status') THEN
+    ALTER TABLE empresas ADD COLUMN status VARCHAR(20) DEFAULT 'trial';
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresas' AND column_name='data_trial_fim') THEN
+    ALTER TABLE empresas ADD COLUMN data_trial_fim TIMESTAMP;
+  END IF;
+END $$;
 
 -- ========================================
 -- TABELA: ADMINS

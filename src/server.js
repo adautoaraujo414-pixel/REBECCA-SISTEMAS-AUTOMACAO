@@ -332,6 +332,18 @@ class Server {
     });
 
     // ==========================================
+    // CADASTRO - Página pública para novos clientes
+    // ==========================================
+    this.app.get('/cadastro', (req, res) => {
+      res.sendFile(path.join(__dirname, 'public/cadastro.html'));
+    });
+
+    // Redirecionar raiz para cadastro (landing page)
+    this.app.get('/', (req, res) => {
+      res.sendFile(path.join(__dirname, 'public/cadastro.html'));
+    });
+
+    // ==========================================
     // RASTREAMENTO - Cliente acompanha corrida
     // ==========================================
     this.app.get('/rastrear/:id', (req, res) => {
