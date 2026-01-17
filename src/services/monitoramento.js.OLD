@@ -54,7 +54,7 @@ class MonitoramentoCorridas {
     console.log('👁️ Monitoramento de corridas iniciado');
     
     // Carregar telefone do ADM para notificações
-    // await this.carregarConfigADM();
+    await this.carregarConfigADM();
     
     // Monitoramento de corridas (atrasos)
     this.intervalo = setInterval(() => {
